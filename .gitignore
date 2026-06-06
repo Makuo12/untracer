@@ -1,0 +1,6 @@
+*.a
+*.elf
+.vscode
+test
+output
+input
