@@ -7,4 +7,6 @@ using u16 = unsigned short;
 
 #define unlikely(x) \
     __builtin_expect(!!(x), 0)
+#define MEM_BARRIER() \
+    __asm__ volatile("" ::: "memory")
 #endif

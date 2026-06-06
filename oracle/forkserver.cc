@@ -4,28 +4,83 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/shm.h>
 #include <sys/mman.h>
 
 #include <vector>
+#include <csignal>
 #include <cstring>
+#include <map>
 
 #include "data.h"
 #include "logger.h"
-#include "types.h"
-#include "config.h"
+#include "dyninst_handle.h"
 
 using std::string;
 using std::vector;
 
 void __oracle_fuzz(vector<Entry> &entries, string &out_file_path);
+void __oracle_init_dyninst(int argc, char ** argv);
 
 int total_execs = 0;
 int total_paths_found = 0;
 int total_coverage_found = 0;
 
+static long savedDi;
+register long rdi asm("di"); // the warning is fine - we need the warning because of a bug in dyninst
 
-void apply(u8 * mem, int position) {
+
+std::map<int, BPatchSnippetHandle *> snippet_handles;
+    
+
+
+void __oracle_apply(u8 * mem, int position) {
     mem[position >> 3] ^= (128 >> (position & 7));
+}
+
+u64 *trap_block_ids;
+
+void __oracle_init_shm(void) {
+    int shm_id = shmget(IPC_PRIVATE, sizeof(*trap_block_ids), IPC_CREAT | IPC_EXCL | 0600);
+    if (shm_id < 0) {
+        FATAL({"Failed to create shared memory"}); 
+    }
+    string shm_id_str = std::to_string(shm_id);
+    setenv(SHM_TRAP_BLOCK_IDS_ENV, shm_id_str.c_str(), 1);
+    trap_block_ids = (u64 *)shmat(shm_id, NULL, 0);
+    if (trap_block_ids == (u64 *)-1) {
+        shmctl(shm_id, IPC_RMID, NULL);
+        FATAL({"Failed to link trap_block_ids to memory"});
+    }
+}
+
+void __oracle_save_rdi()
+{
+    savedDi = rdi;
+    /*
+    asm("pop %rax"); // take care of rip
+    asm("push %rdi");
+    asm("push %rax");
+    */
+}
+
+void __oracle_restore_rdi()
+{
+    rdi = savedDi;
+    /*
+    asm("pop %rax"); // take care of rip
+    asm("pop %rdi");
+    asm("push %rax");
+    */
+}
+
+void __oracle_trap_hit(int blkId) {
+    *trap_block_ids = (u64)blkId;
+    MEM_BARRIER();
+    __asm__ volatile("int3");
 }
 
 void __oracle_fuzz(vector<Entry> &entries, string &input_file) {
@@ -51,7 +106,7 @@ void __oracle_fuzz(vector<Entry> &entries, string &input_file) {
         // fuzz one bit
         int len = entry->size << 3;
         for (int i = 0; i < len; ++i) {
-            apply(mem, i);
+            __oracle_apply(mem, i);
             // we want to write to the output file
             int out_fd = open(input_file.data(), O_RDWR);
             if (out_fd < 0) {
@@ -68,6 +123,14 @@ void __oracle_fuzz(vector<Entry> &entries, string &input_file) {
             if (child == 0) {
                 // We are in child
                 munmap(mem, entry->size);
+                int shm_id = getenv(SHM_ID_ENV) ? atoi(getenv(SHM_ID_ENV)) : -1;
+                if (shm_id < 0) {
+                    raise(SIGABRT);
+                }
+                trap_block_ids = (u64 *)shmat(shm_id, NULL, 0);
+                if (trap_block_ids == (u64 *)-1) {
+                    raise(SIGABRT);
+                }
                 return;
             } else {
                 // We are in parent
@@ -107,7 +170,7 @@ void __oracle_fuzz(vector<Entry> &entries, string &input_file) {
                 }
             }
             
-            apply(mem, i);
+            __oracle_apply(mem, i);
         }
         entry->full_pass += 1;
         SAY({"full pass", std::to_string(total_execs)});
@@ -121,6 +184,7 @@ void __oracle_fuzz(vector<Entry> &entries, string &input_file) {
 
 __attribute__((constructor)) void __oracle_forkserver(int argc, char **argv) {
     std::cout << "Running oracle" << std::endl;
+    __oracle_init_dyninst(argc, argv);
     string in_dir(getenv(IN_DIR) ? getenv(IN_DIR) : "");
     string out_dir(getenv(OUT_DIR) ? getenv(OUT_DIR) : "");
     string input_file(argv[optind]);

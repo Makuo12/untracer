@@ -2,10 +2,13 @@ import argparse
 import subprocess
 import random
 import string
+from pathlib import Path
 import os
 
 IN_DIR = "input_dir"
 OUT_DIR = "output_dir"
+
+lib_items = []
 
 def create_input(size):
     test = "test"
@@ -18,30 +21,37 @@ def create_input(size):
             text = ''.join(random.choices(string.ascii_letters, k=40))
             f.write(text)
 
-def create_archives(compiler, include, forkserver_name, archive_filename, object_filename):
-    oracle_o = f"{compiler} {include} ./oracle/{forkserver_name} -c -o oracle_{object_filename}"
-    result = subprocess.run(oracle_o, shell=True, stderr=subprocess.PIPE, text=True)
+            
+
+def create_libs(compiler="g++", include="-I ./include"):
+    main_path = "/home/makuo12/Documents/forte-research/build"
+    os.makedirs("libs", exist_ok=True)
+    for filename in os.listdir(main_path):
+        path = os.path.join(main_path, filename)
+        if os.path.isdir(path):
+            for subfilename in os.listdir(path):
+                if subfilename.endswith(".so"):
+                    src = os.path.join(path, subfilename)
+                    dst = os.path.join("libs", subfilename)
+                    split_name = subfilename.split(".")
+                    name = "-l" + split_name[0][3:]
+                    lib_items.append(name)
+                    os.symlink(src, dst)
+                    os.symlink(src, dst + ".13.0")
+    tracer_lib = f"{compiler} {include} ./tracer/libtracer.cc -shared -fPIC -o ./libs/libtracer.so"
+    result = subprocess.run(tracer_lib, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
-    tracer_o = f"{compiler} {include} ./tracer/{forkserver_name} -c -o tracer_{object_filename}"
-    result = subprocess.run(tracer_o, shell=True, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
-    archive = "ar rcs"
-    oracle_a = f"{archive} liboracle_{archive_filename} oracle_{object_filename}"
-    result = subprocess.run(oracle_a, shell=True, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
-    tracer_a = f"{archive} libtracer_{archive_filename} tracer_{object_filename}"
-    result = subprocess.run(tracer_a, shell=True, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
-    os.remove(f"oracle_{object_filename}")
-    os.remove(f"tracer_{object_filename}")
+    # lib_items.append("-ltracer")
+    
+def get_headers(pattern = "h", path = "/home/makuo12/Documents/forte-research/dyninst"):
+    names = []
+    for p in Path(path).rglob(pattern):
+        if p.is_dir():
+            names.append(str(p))
+    return set(names)
+
 
 def create_arguments():
     parser = argparse.ArgumentParser(description="Untracer")
@@ -62,22 +72,78 @@ def create_arguments():
     os.environ[OUT_DIR] = out_dir
     return input_file
 
-def main():
-    # create_input(10)
-    input_file = create_arguments()
-    compiler = "clang++"
-    include = "-I ./include"
-    forkserver_name = "forkserver.cc"
-    object_filename = "forkserver.o"
-    archive_filename = "forkserver.a"
-    create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
-    target_name = "target.cc"
+def create_elf(compiler, target_name):
     oracle_elf = f"{compiler} {target_name} -Wl,-force_load,liboracle_forkserver.a -o oracle.elf"
     result = subprocess.run(oracle_elf, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
-    result = subprocess.run(["./oracle.elf", input_file])
+    trace_elf = f"{compiler} {target_name} -Wl,-force_load,libtracer_forkserver.a -o tracer.elf"
+    result = subprocess.run(trace_elf, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+
+def setup_tracer(compiler="g++", include="-I ./include"):
+    forkserver = "./tracer/forkserver.cc"
+    object_file = "tracer_forkserver.o"
+    a_file = "tracer_forkserver.a"
+    tracer_o = f"{compiler} {include} {forkserver} -c -o {object_file}"
+    result = subprocess.run(tracer_o, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+    tracer_a = f"ar rcs {a_file} {object_file}"
+    result = subprocess.run(tracer_a, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+    names = " ".join(item for item in lib_items)
+    tracer_elf = f"{compiler} {include} -no-pie -L./libs -Wl,-rpath,./libs  {names} -Wl,--whole-archive {a_file} -Wl,--no-whole-archive -ltracer target.cc -o tracer.elf"
+    print(tracer_elf)
+    result = subprocess.run(tracer_elf, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+    headers = " -I ".join(head for head in get_headers())
+    if len(headers) > 0:
+        headers = "-I " + headers
+    dyninst_elf = f"{compiler} {include} {headers} -no-pie ./tracer/tracer_dyninst.cc -L./libs -Wl,-rpath,./libs -Wl,--start-group {names} -Wl,--end-group -o tracer_dyninst.elf"
+    print(dyninst_elf)
+    result = subprocess.run(dyninst_elf, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+
+def main():
+    create_input(10)
+    create_libs()
+    input_file = create_arguments()
+    setup_tracer()
+    #create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
+    # create_elf(compiler, target_name)
+    # result = subprocess.run(["./oracle.elf", input_file])
+
+
+def create_archives(compiler, include, forkserver_name, archive_filename, object_filename):
+    oracle_o = f"{compiler} {include} ./oracle/{forkserver_name} -c -o oracle_{object_filename}"
+    result = subprocess.run(oracle_o, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+    archive = "ar rcs"
+    oracle_a = f"{archive} liboracle_{archive_filename} oracle_{object_filename}"
+    result = subprocess.run(oracle_a, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+    tracer_a = f"{archive} libtracer_{archive_filename} tracer_{object_filename}"
+    result = subprocess.run(tracer_a, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+    os.remove(f"oracle_{object_filename}")
+    os.remove(f"tracer_{object_filename}")
 
 if __name__ == "__main__":
     main()

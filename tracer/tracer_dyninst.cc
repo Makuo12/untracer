@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <set>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -8,15 +9,24 @@
 #include <cstring>
 #include <fstream>
 
+#include "config.h"
+
 using std::cerr;
 using std::cout;
 using std::endl;
 using std::cin;
 using std::vector;
 using std::string;
+using std::set;
+
+#include "BPatch.h"
+#include "BPatch_binaryEdit.h"
+#include "BPatch_flowGraph.h"
+#include "BPatch_function.h"
+#include "BPatch_point.h"
 
 
-vector<string> skipLibraries;
+set<string> skipLibraries;
 
 BPatch_function * trace_block_hit;
 BPatch_function * restore_rdi;
@@ -27,23 +37,26 @@ int dynfix = 0;
 using namespace Dyninst;
 BPatch bpatch;
 
+bool verbose = false;
+
 
 void initSkipLibraries()
 {
     /* List of shared libraries to skip instrumenting. */
-    skipLibraries.push_back("libUnTracerDyninst.so");
-    skipLibraries.push_back("libc.so.6");
-    skipLibraries.push_back("libc.so.7");
-    skipLibraries.push_back("ld-2.5.so");
-    skipLibraries.push_back("ld-linux.so.2");
-    skipLibraries.push_back("ld-lsb.so.3");
-    skipLibraries.push_back("ld-linux-x86-64.so.2");
-    skipLibraries.push_back("ld-lsb-x86-64.so");
-    skipLibraries.push_back("ld-elf.so.1");
-    skipLibraries.push_back("ld-elf32.so.1");
-    skipLibraries.push_back("libstdc++.so.6");
+    skipLibraries.insert("libtracer.so");
+    skipLibraries.insert("libc.so.6");
+    skipLibraries.insert("libc.so.7");
+    skipLibraries.insert("ld-2.5.so");
+    skipLibraries.insert("ld-linux.so.2");
+    skipLibraries.insert("ld-lsb.so.3");
+    skipLibraries.insert("ld-linux-x86-64.so.2");
+    skipLibraries.insert("ld-lsb-x86-64.so");
+    skipLibraries.insert("ld-elf.so.1");
+    skipLibraries.insert("ld-elf32.so.1");
+    skipLibraries.insert("libstdc++.so.6");
     return;
 }
+
 
 BPatch_function *findFuncByName(BPatch_image *appImage, char *curFuncName)
 {
@@ -62,7 +75,7 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     /* Verify curBlk is instrumentable. */
     if (curBlk == NULL)
     {
-        cerr << "Failed to find entry at 0x" << hex << curBlkAddr << endl;
+        cerr << "Failed to find entry at 0x" << std::hex << curBlkAddr << std::endl;
         return EXIT_FAILURE;
     }
     BPatch_Vector<BPatch_snippet *> instArgsDynfix;
@@ -89,12 +102,12 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     /* Verify instrumenting worked. If all good, advance blkIndex and return. */
     if (!handle)
     {
-        cerr << "Failed to insert trace callback at 0x" << hex << curBlkAddr << endl;
+        cerr << "Failed to insert trace callback at 0x" << std::hex << curBlkAddr << std::endl;
     }
 
     /* Print some useful info, if requested. */
     if (verbose)
-        cout << "Inserted trace callback at 0x" << hex << curBlkAddr << " of " << curFuncName << " of size " << dec << curBlkSize << endl;
+        cout << "Inserted trace callback at 0x" << std::hex << curBlkAddr << " of " << curFuncName << " of size " << std::dec << curBlkSize << std::endl;
 
     return 0;
 }
@@ -134,15 +147,10 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector < BPatch_function * >::ite
 		unsigned int curBlkID = *blkIndex;
 		/* Other basic blocks to ignore. */
         string functionName(curFuncName);
-        auto tracer_mark = strstr(functionName.data(), "__tracer");
-		if (tracer_mark != NULL|| 
-            functionName == string("init") ||
-			functionName == string("free") ||
-			functionName == string("malloc") ||
-			functionName == string("calloc") ||
-			functionName == string("realloc")
-            )
-			continue;
+        if (skipFunctions.count(functionName))
+            continue;
+        if ((strstr(functionName.data(), "__tracer")) != NULL)
+            continue;
         insert_trace(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
 		(*blkIndex)++;
 		continue;
@@ -153,19 +161,25 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector < BPatch_function * >::ite
 int main(int argc, char **argv) {
     initSkipLibraries();
     // initSkipAddresses();
-    // bpatch.setDelayedParsing(true);
-    // bpatch.setLivenessAnalysis(false);
-    // bpatch.setMergeTramp(false);
+    bpatch.setDelayedParsing(true);
+    bpatch.setLivenessAnalysis(false);
+    bpatch.setMergeTramp(false);
+    string outputBinary("tracer_instrumented.elf");
+    int blkIndex = 0;
     BPatch_binaryEdit *app = bpatch.openBinary("tracer.elf");
-    if (appBin == NULL)
+    if (app == NULL)
     {
         cerr << "Failed to open binary" << endl;
         return EXIT_FAILURE;
     }
     BPatch_image *appImage = app->getImage();
-    save_rdi = findFuncByName(appImage, "__trace_save_rdi");
-    restore_rdi = findFuncByName(appImage, "__trace_restore_rdi");
-    trace_block_hit = findFuncByName(appImage, "__tracer_block_hit");
+    save_rdi = findFuncByName(appImage, (char *)"__trace_save_rdi");
+    restore_rdi = findFuncByName(appImage, (char *)"__trace_restore_rdi");
+    trace_block_hit = findFuncByName(appImage, (char *)"__tracer_block_hit");
+    if (save_rdi == NULL || restore_rdi == NULL || trace_block_hit == NULL) {
+        cerr << "Failed to find important functions" << endl;
+        return EXIT_FAILURE;
+    }
     vector<BPatch_module *> *modules = appImage->getModules();
     vector<BPatch_module *>::iterator moduleIter;
     for (moduleIter = modules->begin(); moduleIter != modules->end(); ++moduleIter)
@@ -175,7 +189,7 @@ int main(int argc, char **argv) {
         (*moduleIter)->getName(curModuleName, 1024);
         if ((*moduleIter)->isSharedLib())
         {
-            if (!includeSharedLib || skipLibraries.find(curModuleName) != skipLibraries.end())
+            if (skipLibraries.find(curModuleName) != skipLibraries.end())
             {
                 if (verbose)
                 {
@@ -192,15 +206,15 @@ int main(int argc, char **argv) {
         for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
         {
             /* Go through each function's basic blocks and insert callbacks accordingly. */
-            iterateBlocks(appBin, funcIter, &blkIndex);
+            iterate_blocks(app, funcIter, &blkIndex);
         }
     }
     /* If specified, save the instrumented binary and verify success. */
-    if (outputBinary)
+    if (outputBinary.size() > 0)
     {
         if (verbose)
             cout << "Saving the instrumented binary to " << outputBinary << " ..." << endl;
-        if (!appBin->writeFile(outputBinary))
+        if (!app->writeFile(outputBinary.data()))
         {
             cerr << "Failed to write output file: " << outputBinary << endl;
             return EXIT_FAILURE;

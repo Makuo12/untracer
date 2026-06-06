@@ -6,9 +6,26 @@
 #define PROJECT_NAME 'U'
 #define SHM_KEY_FILE "/tmp/shm_key_file"
 #define SHM_ID_ENV "shm_id_env"
+#define SHM_TRAP_BLOCK_IDS_ENV "shm_trap_block_ids_env"
 #define SUCCESS "200"
 #define FAILURE "600"
 #define IN_DIR "input_dir"
 #define OUT_DIR "output_dir"
 #define INPUT_FILE "input_file"
+
+#ifdef __cplusplus
+#include <set>
+#include <string>
+const std::set<std::string> skipFunctions = {
+    // CRT
+    "_start", "__libc_start_main",
+    "_init", "_fini",
+    "__libc_csu_init", "__libc_csu_fini",
+    "register_tm_clones", "deregister_tm_clones",
+    "__do_global_ctors_aux", "__do_global_dtors_aux",
+    "frame_dummy",
+    "__cxa_atexit", "__cxa_finalize",
+    "malloc", "calloc", "realloc", "free",
+};
+#endif
 #endif

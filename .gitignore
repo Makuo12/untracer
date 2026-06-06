@@ -1,6 +1,9 @@
 *.a
 *.elf
+*.o
+*.so
 .vscode
+libs
 test
 output
 input
