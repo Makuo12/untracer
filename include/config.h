@@ -25,7 +25,7 @@ const std::set<std::string> skipFunctions = {
     "__do_global_ctors_aux", "__do_global_dtors_aux",
     "frame_dummy",
     "__cxa_atexit", "__cxa_finalize",
-    "malloc", "calloc", "realloc", "free",
+    "malloc", "calloc", "realloc", "free", "FATAL", "SAY"
 };
 #endif
 #endif

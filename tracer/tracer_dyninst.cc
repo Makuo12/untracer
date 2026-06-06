@@ -39,6 +39,8 @@ BPatch bpatch;
 
 bool verbose = false;
 
+const char * tracer_library = "libtracer.so";
+
 
 void initSkipLibraries()
 {
@@ -173,6 +175,10 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
     BPatch_image *appImage = app->getImage();
+    if (!app->loadLibrary(tracer_library)) {
+        cerr << "Failed to load binary" << endl;
+        return EXIT_FAILURE;
+    }
     save_rdi = findFuncByName(appImage, (char *)"__trace_save_rdi");
     restore_rdi = findFuncByName(appImage, (char *)"__trace_restore_rdi");
     trace_block_hit = findFuncByName(appImage, (char *)"__tracer_block_hit");
