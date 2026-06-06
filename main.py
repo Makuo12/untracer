@@ -43,6 +43,11 @@ def create_libs(compiler="g++", include="-I ./include"):
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
+    oracle_lib = f"{compiler} {include} ./oracle/liboracle.cc -shared -fPIC -o ./libs/liboracle.so"
+    result = subprocess.run(oracle_lib, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
     # lib_items.append("-ltracer")
     
 def get_headers(pattern = "h", path = "/home/makuo12/Documents/forte-research/dyninst"):
@@ -115,35 +120,33 @@ def setup_tracer(compiler="g++", include="-I ./include"):
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
 
+def setup_oracle(compiler="g++", include="-I ./include"):
+    forkserver = "./oracle/forkserver.cc"
+    object_file = "oracle_forkserver.o"
+    a_file = "oracle_forkserver.a"
+    oracle_o = f"{compiler} {include} {forkserver} -c -o {object_file}"
+    result = subprocess.run(oracle_o, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+    oracle_a = f"ar rcs {a_file} {object_file}"
+    result = subprocess.run(oracle_a, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+
 def main():
+    print("Setting up untracer...")
     create_input(10)
     create_libs()
     input_file = create_arguments()
     setup_tracer()
+    
     #create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
     # create_elf(compiler, target_name)
     # result = subprocess.run(["./oracle.elf", input_file])
 
 
-def create_archives(compiler, include, forkserver_name, archive_filename, object_filename):
-    oracle_o = f"{compiler} {include} ./oracle/{forkserver_name} -c -o oracle_{object_filename}"
-    result = subprocess.run(oracle_o, shell=True, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
-    archive = "ar rcs"
-    oracle_a = f"{archive} liboracle_{archive_filename} oracle_{object_filename}"
-    result = subprocess.run(oracle_a, shell=True, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
-    tracer_a = f"{archive} libtracer_{archive_filename} tracer_{object_filename}"
-    result = subprocess.run(tracer_a, shell=True, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
-    os.remove(f"oracle_{object_filename}")
-    os.remove(f"tracer_{object_filename}")
 
 if __name__ == "__main__":
     main()

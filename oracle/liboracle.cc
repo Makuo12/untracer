@@ -1,23 +1,8 @@
-#include <getopt.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <fcntl.h>
-#include <sys/wait.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/shm.h>
-#include <sys/mman.h>
+#include "liboracle.h"
 
-#include <vector>
-#include <csignal>
-#include <cstring>
-#include <map>
+using std::string;
+using std::vector;
 
-#include "data.h"
-#include "logger.h"
-#include "dyninst_handle.h"
 
 int total_execs = 0;
 int total_paths_found = 0;
@@ -172,5 +157,36 @@ void __oracle_fuzz(vector<Entry> &entries, string &input_file) {
         if (global_count == entries.size()) {
             global_count = 0;
         }
+    }
+}
+
+
+void __oracle_init(vector<Entry> &entries, string &input_file) {
+    string in_dir(getenv(IN_DIR) ? getenv(IN_DIR) : "");
+    string out_dir(getenv(OUT_DIR) ? getenv(OUT_DIR) : "");
+    if (in_dir.size() == 0 || out_dir.size() == 0 || input_file.size() == 0) {
+        FATAL("Please set all flags -o (output path), -p (path for file), -i (input directory)");
+    }
+    dirent **items;
+    int count = scandir(in_dir.data(), &items, NULL, alphasort);
+    if (count < 0) {
+        FATAL("Failed to scan input directory");
+    }
+    if (count == 0) {
+        FATAL("No input files found to fuzz");
+    }
+    struct stat st;
+    for (int i = 0; i < count; ++i) {
+        if (items[i]->d_type != DT_REG) continue;
+        string file_path = in_dir + "/" + items[i]->d_name;
+        if (stat(file_path.c_str(), &st) == 0) {
+            Entry entry{items[i]->d_name, st.st_size, file_path};
+            entries.emplace_back(entry);
+        }
+        free(items[i]);
+    }
+    free(items);
+    if (entries.empty()) {
+        FATAL("No valid input files found to fuzz");
     }
 }
