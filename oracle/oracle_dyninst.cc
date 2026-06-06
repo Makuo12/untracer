@@ -29,13 +29,18 @@ extern u64 *trap_block_ids;
 
 extern std::map<int, BPatchSnippetHandle *> snippet_handles;
 
-int verbose = 0;
-int dynfix = 0;
+bool verbose = true;
+bool dynfix = false;
+
+const char * oracle_library = "liboracle.so";
+
+
 
 set<string> skipLibraries;
 void __oracle_initSkipLibraries()
 {
     /* List of shared libraries to skip instrumenting. */
+    skipLibraries.insert("liboracle.so");
     skipLibraries.insert("liboracle_dyninst.so");
     skipLibraries.insert("libc.so.6");
     skipLibraries.insert("libc.so.7");
@@ -160,7 +165,9 @@ void __oracle_init_dyninst(int argc, char ** argv) {
     BPatch_addressSpace *app = appProc;
     BPatch_image *appImage = app->getImage();
     int blkIndex = 0;
-
+    if (!app->loadLibrary(oracle_library)) {
+        cerr << "Failed to load binary" << endl;
+    }
     save_rdi = __oracle_findFuncByName(appImage, (char *)"__oracle_save_rdi");
     restore_rdi = __oracle_findFuncByName(appImage, (char *)"__oracle_restore_rdi");
     oracle_trap_hit = __oracle_findFuncByName(appImage, (char *)"__oracle_trap_hit");
