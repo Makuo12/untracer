@@ -162,13 +162,12 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector < BPatch_function * >::ite
 
 int main(int argc, char **argv) {
     initSkipLibraries();
-    // initSkipAddresses();
     bpatch.setDelayedParsing(true);
     bpatch.setLivenessAnalysis(false);
     bpatch.setMergeTramp(false);
     string outputBinary("./output/tracer_instrumented.elf");
     int blkIndex = 0;
-    BPatch_binaryEdit *app = bpatch.openBinary("tracer.elf");
+    BPatch_binaryEdit *app = bpatch.openBinary(argv[1]);
     if (app == NULL)
     {
         cerr << "Failed to open binary" << endl;

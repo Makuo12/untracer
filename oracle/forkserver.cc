@@ -67,35 +67,3 @@ void __oracle_fuzz(int argc, char **argv, vector<Entry> &entries, string &input_
     }
 }
 
-// void handle() {
-//             if (WIFSIGNALED(status)) {
-//                 int sig = WTERMSIG(status);
-//                 // With sig we check if it was a trap
-//                 if (sig == SIGTRAP) {
-//                     // We call tracer
-//                     total_paths_found += 1;
-//                     entry->path_found += 1;
-//                     int can_trace_fd = open(CAN_TRACE_PIPE, O_WRONLY);
-//                     if (can_trace_fd < 0) {
-//                         FATAL({"Could not pipe data to trace", CAN_TRACE_PIPE});
-//                     }
-//                     ssize_t size = write(can_trace_fd, SUCCESS, strlen(SUCCESS) + 1);
-//                     if (size < 1) {
-//                         FATAL({"write could not pipe data to trace", CAN_TRACE_PIPE});
-//                     }
-//                     close(can_trace_fd);
-//                     int done_trace_fd = open(DONE_TRACE_PIPE, O_RDONLY);
-//                     if (done_trace_fd < 0) {
-//                         FATAL({"Done trace pipe not working", DONE_TRACE_PIPE});
-//                     }
-//                     char buf[1024];
-//                     read(done_trace_fd, buf, sizeof(buf));
-//                     close(done_trace_fd);
-//                     if (strstr(buf, SUCCESS)) {
-//                         // Done to next
-//                         total_coverage_found += 1;
-//                         entry->trace_count += 1;
-//                     }
-//                 }
-//             }
-// }
