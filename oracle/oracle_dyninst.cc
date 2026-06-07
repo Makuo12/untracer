@@ -103,7 +103,7 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
     {
         /* If path to output instrumented bb addrs list set, save the addresses of each basic block instrumented to that file. */
         ofstream blksListFile("./output/.bblist", std::ios::app);
-        blksListFile << std::dec << curBlkAddr << "," << std::dec << curBlkID << endl;
+        blksListFile << std::hex << curBlkAddr << "," << std::dec << curBlkID << endl;
         blksListFile.close();
     }
     /* Print some useful info, if requested. */
@@ -162,13 +162,12 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector < BPatch_function * >::ite
 
 int main(int argc, char **argv) {
     initSkipLibraries();
-    // initSkipAddresses();
     bpatch.setDelayedParsing(true);
     bpatch.setLivenessAnalysis(false);
     bpatch.setMergeTramp(false);
     string outputBinary("./output/oracle_instrumented.elf");
     int blkIndex = 0;
-    BPatch_binaryEdit *app = bpatch.openBinary("oracle.elf");
+    BPatch_binaryEdit *app = bpatch.openBinary("pdftotext");
     if (app == NULL)
     {
         cerr << "Failed to open binary" << endl;
