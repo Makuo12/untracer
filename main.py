@@ -6,8 +6,15 @@ from pathlib import Path
 import shutil
 import os
 
-IN_DIR = "input_dir"
-OUT_DIR = "output_dir"
+SHM_KEY_FILE_NAME = "shm_key_file"
+SHM_ID_ENV = "shm_id_env"
+SHM_TRAP_BLOCK_IDS_ENV = "shm_trap_block_ids_env"
+SUCCESS = "200"
+FAILURE = "600"
+IN_DIR_ENV = "input_dir"
+OUT_DIR_ENV = "output_dir"
+INPUT_FILE_ENV = "input_file"
+
 
 lib_items = []
 
@@ -68,6 +75,8 @@ def get_headers(pattern = "h", path = "/home/makuo12/Documents/forte-research/dy
 
 
 def create_arguments():
+    tmp = "input"
+    os.makedirs(tmp, exist_ok=True)
     parser = argparse.ArgumentParser(description="Untracer")
     parser.add_argument("-i", dest="in_dir", required=True, help="Directory holding inputs")
     parser.add_argument("-o", dest="out_dir", required=True, help="Directory for outputs")
@@ -77,13 +86,15 @@ def create_arguments():
     out_dir       = args.out_dir
     input_file    = args.input_file 
     if input_file == "@@":
-        tmp = "input"
-        os.makedirs(tmp, exist_ok=True)
         input_file = os.path.join(tmp, "cur_input")
         # os.makedirs(out_dir, exist_ok=True)
         open(input_file, "w").close() 
-    os.environ[IN_DIR] = in_dir
-    os.environ[OUT_DIR] = out_dir
+    shm_key_file = os.path.join(tmp, SHM_KEY_FILE_NAME)
+    open(shm_key_file, "w").close()
+    os.environ[IN_DIR_ENV] = in_dir
+    os.environ[OUT_DIR_ENV] = out_dir
+    os.environ[SHM_KEY_FILE_NAME] = shm_key_file
+    os.environ[INPUT_FILE_ENV] = input_file
     return input_file
 
 def create_elf(compiler, target_name):
@@ -99,60 +110,82 @@ def create_elf(compiler, target_name):
         exit(1)
 
 def setup_tracer(compiler="g++", include="-I ./include", headers = ""):
+
     forkserver = "./tracer/forkserver.cc"
-    object_file = "tracer_forkserver.o"
-    a_file = "tracer_forkserver.a"
+    object_file = "./build/tracer_forkserver.o"
     tracer_o = f"{compiler} {include} {forkserver} -c -o {object_file}"
     result = subprocess.run(tracer_o, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
-    tracer_a = f"ar rcs {a_file} {object_file}"
-    result = subprocess.run(tracer_a, shell=True, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
-    tracer_elf = f"{compiler} {include} -L./libs -Wl,-rpath,./libs -no-pie -Wl,--whole-archive {a_file} -Wl,--no-whole-archive -ltracer target.cc -o tracer.elf"
+    # tracer_a = f"ar rcs {a_file} {object_file}"
+    # result = subprocess.run(tracer_a, shell=True, stderr=subprocess.PIPE, text=True)
+    # if result.returncode != 0:
+    #     print(f"Compilation failed:\n{result.stderr}")
+    #     exit(1)
+    tracer_elf = f"{compiler} {include} target.cc {object_file} -Wl,--wrap=main -L./libs -Wl,-rpath,./libs -no-pie -ltracer -o ./build/tracer.elf"
     print(tracer_elf)
     result = subprocess.run(tracer_elf, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
     names = " ".join(item for item in lib_items)
-    dyninst_elf = f"{compiler} {include} {headers}  ./tracer/tracer_dyninst.cc -L./libs -Wl,-rpath,./libs -Wl,--start-group {names} -Wl,--end-group -o tracer_dyninst.elf"
+    dyninst_elf = f"{compiler} {include} {headers} ./tracer/tracer_dyninst.cc -L./libs -Wl,-rpath,./libs -Wl,--start-group {names} -ltracer -Wl,--end-group -o ./build/tracer_dyninst.elf"
     print(dyninst_elf)
     result = subprocess.run(dyninst_elf, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
+    result = subprocess.run(["./build/tracer_dyninst.elf", "./build/tracer.elf"])
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
 
 def setup_oracle(compiler="g++", include="-I ./include", headers = ""):
-    # forkserver = "./oracle/forkserver.cc"
-    # object_file = "oracle_forkserver.o"
-    # a_file = "oracle_forkserver.a"
-    # oracle_o = f"{compiler} {include} {headers} {forkserver} -g -c -o {object_file}"
-    # result = subprocess.run(oracle_o, shell=True, stderr=subprocess.PIPE, text=True)
-    # if result.returncode != 0:
-    #     print(f"Compilation failed:\n{result.stderr}")
-    #     exit(1)
+    forkserver = "./oracle/forkserver.cc"
+    object_file = "./build/oracle_forkserver.o"
+    oracle_o = f"{compiler} {include} {headers} {forkserver} -c -o {object_file}"
+    result = subprocess.run(oracle_o, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
     # oracle_a = f"ar rcs {a_file} {object_file}"
     # result = subprocess.run(oracle_a, shell=True, stderr=subprocess.PIPE, text=True)
     # if result.returncode != 0:
     #     print(f"Compilation failed:\n{result.stderr}")
     #     exit(1)
-    oracle_elf = f"{compiler} {include} -L./libs -Wl,-rpath,./libs -no-pie -loracle target.cc -o oracle.elf"
+    oracle_elf = f"{compiler} {include} target.cc {object_file} -Wl,--wrap=main -L./libs -Wl,-rpath,./libs -no-pie -loracle -o ./build/oracle.elf"
     print(oracle_elf)
     result = subprocess.run(oracle_elf, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
     names = " ".join(item for item in lib_items)
-    dyninst_elf = f"{compiler} {include} {headers} ./oracle/oracle_dyninst.cc -L./libs -Wl,-rpath,./libs -Wl,--start-group {names} -Wl,--end-group -o oracle_dyninst.elf"
+    dyninst_elf = f"{compiler} {include} {headers} ./oracle/oracle_dyninst.cc -L./libs -Wl,-rpath,./libs -Wl,--start-group {names} -Wl,--end-group -o ./build/oracle_dyninst.elf"
     print(dyninst_elf)
     result = subprocess.run(dyninst_elf, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
+    result = subprocess.run(["./build/oracle_dyninst.elf", "./build/oracle.elf"])
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+
+def setup_untracer(compiler="g++", include="-I ./include"):
+    untracer_elf = f"{compiler} {include} untracer.cc -o untracer.elf"
+    result = subprocess.run(untracer_elf, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+        
+def run_untracer():
+    # cerr << "Usage: " << argv[0] << " -o <oracle> -t <trace> -b <bblock> -i <input>" << endl;
+    result = subprocess.run(["./untracer.elf", "-t", "./output/tracer_instrumented.elf", "-b", "./output/.bblist", "-o", "./build/oracle.elf"])
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+
 
 def main():
     print("Setting up untracer...")
@@ -160,10 +193,12 @@ def main():
     if len(headers) > 0:
         headers = "-I " + headers
     create_input(10)
-    input_file = create_arguments()
     create_libs(headers = headers)
-    # setup_tracer(headers = headers)
+    setup_tracer(headers = headers)
     setup_oracle(headers = headers) 
+    input_file = create_arguments()
+    setup_untracer()
+    run_untracer()
     #create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
     # create_elf(compiler, target_name)
     # result = subprocess.run(["./oracle.elf", input_file])

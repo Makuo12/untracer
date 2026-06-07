@@ -7,9 +7,9 @@ int total_execs = 0;
 int total_paths_found = 0;
 int total_coverage_found = 0;
 
-extern int __real_main(int argc, char **argv);
+extern "C" int __real_main(int argc, char **argv);
 
-int __wrap_main(int argc, char **argv) {
+extern "C" int __wrap_main(int argc, char **argv) {
     std::cout << "Running oracle" << std::endl;
     vector<Entry> entries;
     string input_file(argv[optind]);

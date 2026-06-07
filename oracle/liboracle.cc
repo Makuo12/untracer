@@ -57,8 +57,8 @@ void __oracle_trap_hit(int blkId) {
 
 
 void __oracle_init(vector<Entry> &entries, string &input_file) {
-    string in_dir(getenv(IN_DIR) ? getenv(IN_DIR) : "test");
-    string out_dir(getenv(OUT_DIR) ? getenv(OUT_DIR) : "output");
+    string in_dir(getenv(IN_DIR_ENV) ? getenv(IN_DIR_ENV) : "test");
+    string out_dir(getenv(OUT_DIR_ENV) ? getenv(OUT_DIR_ENV) : "output");
     if (in_dir.size() == 0 || out_dir.size() == 0 || input_file.size() == 0) {
         FATAL("Please set all flags -o (output path), -p (path for file), -i (input directory)");
     }

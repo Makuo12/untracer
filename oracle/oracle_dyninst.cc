@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
     bpatch.setMergeTramp(false);
     string outputBinary("./output/oracle_instrumented.elf");
     int blkIndex = 0;
-    BPatch_binaryEdit *app = bpatch.openBinary("pdftotext");
+    BPatch_binaryEdit *app = bpatch.openBinary(argv[1]);
     if (app == NULL)
     {
         cerr << "Failed to open binary" << endl;

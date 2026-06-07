@@ -39,13 +39,13 @@ BPatch bpatch;
 
 bool verbose = false;
 
-const char * tracer_library = "libtracer.so";
+const char * tracer_library = "./libs/libtracer.so";
 
 
 void initSkipLibraries()
 {
     /* List of shared libraries to skip instrumenting. */
-    skipLibraries.insert("libtracer.so");
+    skipLibraries.insert("./libs/libtracer.so");
     skipLibraries.insert("libc.so.6");
     skipLibraries.insert("libc.so.7");
     skipLibraries.insert("ld-2.5.so");

@@ -6,6 +6,8 @@ register long rdi asm("di"); // the warning is fine - we need the warning becaus
 
 
 
+
+
 void __trace_save_rdi()
 {
     savedDi = rdi;
