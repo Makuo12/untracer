@@ -1,3 +1,4 @@
+// untracer.cc
 #include <string>
 #include <sys/user.h>
 #include <vector>
@@ -98,6 +99,17 @@ void __tracer_init_class_lookup16() {
     for (int i = 16;  i <= 31;  i++) __trace_count_class_lookup8[i] = 32;
     for (int i = 32;  i <= 127; i++) __trace_count_class_lookup8[i] = 64;
     for (int i = 128; i <= 255; i++) __trace_count_class_lookup8[i] = 128;
+}
+
+void __tracer_init_count_class16(void)
+{
+
+    u32 b1, b2;
+    for (b1 = 0; b1 < 256; b1++)
+        for (b2 = 0; b2 < 256; b2++)
+            __trace_class_lookup16[(b1 << 8) + b2] =
+                (__trace_count_class_lookup8[b1] << 8) |
+                __trace_count_class_lookup8[b2];
 }
 
 void __tracer_classify_counts(u64 *mem) {
@@ -207,14 +219,6 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
         int status;
         waitpid(pid, &status, 0);
 
-        // Write trace_bits to file before classification
-        auto writeTraceBits = [&](const string &label)
-        {
-            string trace_filename = out_dir + "/" + "learn_bits";
-            ofstream trace_file(trace_filename, std::ios::binary);
-            
-        };
-
         // Copy input file to in_dir
         auto saveInputFile = [&]()
         {
@@ -235,7 +239,6 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
 
         if (WIFEXITED(status))
         {
-            writeTraceBits("EXITED"); // write trace_bits before classify
             __tracer_classify_counts((u64 *)trace_bits);
             bool found = __tracer_has_bit();
             if (found)
@@ -245,7 +248,6 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
         }
         else if (WIFSIGNALED(status))
         {
-            writeTraceBits("SIGNALED"); // write trace_bits before classify
             __tracer_classify_counts((u64 *)trace_bits);
             bool found = __tracer_has_bit();
             if (found)
@@ -301,6 +303,7 @@ int main(int argc, char **argv)
     __tracer_init_class_lookup16();
     __tracer_init_trace_bits();
     __tracer_init_virgin_bits();
+    __tracer_init_count_class16();
     setup_bblist(bblist, path_to_bblock);
     modify_oracle(path_to_oracle, bblist, breakpoint);
 
