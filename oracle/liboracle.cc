@@ -12,10 +12,6 @@ static long savedDi;
 register long rdi asm("di"); // the warning is fine - we need the warning because of a bug in dyninst
 
 
-std::map<int, BPatchSnippetHandle *> snippet_handles;
-    
-
-
 void __oracle_apply(u8 * mem, int position) {
     mem[position >> 3] ^= (128 >> (position & 7));
 }
@@ -162,8 +158,8 @@ void __oracle_fuzz(vector<Entry> &entries, string &input_file) {
 
 
 void __oracle_init(vector<Entry> &entries, string &input_file) {
-    string in_dir(getenv(IN_DIR) ? getenv(IN_DIR) : "");
-    string out_dir(getenv(OUT_DIR) ? getenv(OUT_DIR) : "");
+    string in_dir(getenv(IN_DIR) ? getenv(IN_DIR) : "test");
+    string out_dir(getenv(OUT_DIR) ? getenv(OUT_DIR) : "output");
     if (in_dir.size() == 0 || out_dir.size() == 0 || input_file.size() == 0) {
         FATAL("Please set all flags -o (output path), -p (path for file), -i (input directory)");
     }
