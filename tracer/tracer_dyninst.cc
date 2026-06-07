@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
     bpatch.setDelayedParsing(true);
     bpatch.setLivenessAnalysis(false);
     bpatch.setMergeTramp(false);
-    string outputBinary("tracer_instrumented.elf");
+    string outputBinary("./output/tracer_instrumented.elf");
     int blkIndex = 0;
     BPatch_binaryEdit *app = bpatch.openBinary("tracer.elf");
     if (app == NULL)

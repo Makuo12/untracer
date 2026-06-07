@@ -22,11 +22,13 @@
 #include <string>
 #include <algorithm>
 #include <cstring>
+#include <iostream>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
 #include <map>
 void __oracle_init(std::vector<Entry> &entries, std::string &input_file);
+void __oracle_apply(u8 * mem, int position);
 void __oracle_fuzz(std::vector<Entry> &entries, std::string &input_file);
 void __oracle_init_dyninst(int argc, char ** argv);
 #endif

@@ -4,44 +4,41 @@
 #include <string>
 #include <set>
 
-#include <sstream>
-#include <climits>
 #include <cstring>
 #include <fstream>
 
 #include "dyninst_handle.h"
 
 using std::cerr;
-using std::cin;
 using std::cout;
 using std::endl;
-using std::set;
-using std::string;
+using std::cin;
 using std::vector;
-
-
-BPatch bpatch;
-BPatch_function * save_rdi;
-BPatch_function * restore_rdi;
-BPatch_function * oracle_trap_hit;
-
-extern u64 *trap_block_ids;
-
-extern std::map<int, BPatchSnippetHandle *> snippet_handles;
-
-bool verbose = true;
-bool dynfix = false;
-
-const char * oracle_library = "liboracle.so";
-
-
+using std::string;
+using std::set;
+using std::ifstream;
+using std::ofstream;
 
 set<string> skipLibraries;
-void __oracle_initSkipLibraries()
+
+BPatch_function * oracle_block_hit;
+BPatch_function * restore_rdi;
+BPatch_function * save_rdi;
+
+bool dynfix = true;
+
+using namespace Dyninst;
+BPatch bpatch;
+
+bool verbose = false;
+
+const char * oracle_library = "./libs/liboracle.so";
+
+
+void initSkipLibraries()
 {
     /* List of shared libraries to skip instrumenting. */
-    skipLibraries.insert("liboracle.so");
-    skipLibraries.insert("liboracle_dyninst.so");
+    skipLibraries.insert("./libs/liboracle.so");
     skipLibraries.insert("libc.so.6");
     skipLibraries.insert("libc.so.7");
     skipLibraries.insert("ld-2.5.so");
@@ -55,7 +52,8 @@ void __oracle_initSkipLibraries()
     return;
 }
 
-BPatch_function *__oracle_findFuncByName(BPatch_image *appImage, char *curFuncName)
+
+BPatch_function *findFuncByName(BPatch_image *appImage, char *curFuncName)
 {
     BPatch_Vector<BPatch_function *> funcs;
     if (NULL == appImage->findFunction(curFuncName, funcs) || !funcs.size() || NULL == funcs[0])
@@ -67,8 +65,7 @@ BPatch_function *__oracle_findFuncByName(BPatch_image *appImage, char *curFuncNa
     return funcs[0];
 }
 
-
-int __oracle_insert_trap(BPatch_addressSpace *appBin, char *curFuncName, BPatch_point *curBlk, unsigned long curBlkAddr, unsigned int curBlkSize, unsigned int curBlkID)
+int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *curBlk, unsigned long curBlkAddr, unsigned int curBlkSize, unsigned int curBlkID)
 {
     /* Verify curBlk is instrumentable. */
     if (curBlk == NULL)
@@ -84,7 +81,7 @@ int __oracle_insert_trap(BPatch_addressSpace *appBin, char *curFuncName, BPatch_
 
     BPatch_funcCallExpr instExprSaveRdi(*save_rdi, instArgsDynfix);
     BPatch_funcCallExpr instExprRestRdi(*restore_rdi, instArgsDynfix);
-    BPatch_funcCallExpr instExproracle(*oracle_trap_hit, instArgs);
+    BPatch_funcCallExpr instExproracle(*oracle_block_hit, instArgs);
     BPatchSnippetHandle *handle;
 
     /* RDI fix handling. */
@@ -93,7 +90,6 @@ int __oracle_insert_trap(BPatch_addressSpace *appBin, char *curFuncName, BPatch_
 
     /* Instruments the basic block. */
     handle = appBin->insertSnippet(instExproracle, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-    snippet_handles[curBlkID] = handle;
 
     /* Wrap up RDI fix handling. */
     if (dynfix)
@@ -103,7 +99,13 @@ int __oracle_insert_trap(BPatch_addressSpace *appBin, char *curFuncName, BPatch_
     {
         cerr << "Failed to insert oracle callback at 0x" << std::hex << curBlkAddr << std::endl;
     }
-
+    if (handle)
+    {
+        /* If path to output instrumented bb addrs list set, save the addresses of each basic block instrumented to that file. */
+        ofstream blksListFile("./output/.bblist", std::ios::app);
+        blksListFile << std::dec << curBlkAddr << "," << std::dec << curBlkID << endl;
+        blksListFile.close();
+    }
     /* Print some useful info, if requested. */
     if (verbose)
         cout << "Inserted oracle callback at 0x" << std::hex << curBlkAddr << " of " << curFuncName << " of size " << std::dec << curBlkSize << std::endl;
@@ -111,7 +113,7 @@ int __oracle_insert_trap(BPatch_addressSpace *appBin, char *curFuncName, BPatch_
     return 0;
 }
 
-void __oracle_iterate_blocks(BPatch_addressSpace *appBin, vector < BPatch_function * >::iterator funcIter, int *blkIndex) {
+void iterate_blocks(BPatch_binaryEdit *appBin, vector < BPatch_function * >::iterator funcIter, int *blkIndex, unsigned long long moduleBase) {
 
 	/* Extract the function's name, and its pointer from the parent function vector. */
 	BPatch_function *curFunc = *funcIter;
@@ -141,39 +143,48 @@ void __oracle_iterate_blocks(BPatch_addressSpace *appBin, vector < BPatch_functi
 		unsigned int curBlkSize = (*blksIter)->size();	 
 		/* Compute the basic block's adjusted address.	*/
 		unsigned long curBlkAddr = (*blksIter)->getStartAddress();
-		/* Non-PIE binary address correction. */ 
-		curBlkAddr = curBlkAddr - (long) 0x400000;
-		unsigned int curBlkID = *blkIndex;
+		/* Non-PIE binary address correction. */
+        // curBlkAddr = curBlkAddr - moduleBase;
+        curBlkAddr = curBlkAddr - (long)0x400000;
+        unsigned int curBlkID = *blkIndex;
 		/* Other basic blocks to ignore. */
         string functionName(curFuncName);
         if (skipFunctions.count(functionName))
             continue;
         if ((strstr(functionName.data(), "__oracle")) != NULL)
             continue;
-        __oracle_insert_trap(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
+        insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
 		(*blkIndex)++;
 		continue;
 	}
 	return;
 }
 
-
-
-void __oracle_init_dyninst(int argc, char ** argv) {
-    int processId = getpid(); 
-    BPatch_process *appProc = bpatch.processAttach(argv[0], processId);
-    BPatch_addressSpace *app = appProc;
-    BPatch_image *appImage = app->getImage();
+int main(int argc, char **argv) {
+    initSkipLibraries();
+    // initSkipAddresses();
+    bpatch.setDelayedParsing(true);
+    bpatch.setLivenessAnalysis(false);
+    bpatch.setMergeTramp(false);
+    string outputBinary("./output/oracle_instrumented.elf");
     int blkIndex = 0;
+    BPatch_binaryEdit *app = bpatch.openBinary("oracle.elf");
+    if (app == NULL)
+    {
+        cerr << "Failed to open binary" << endl;
+        return EXIT_FAILURE;
+    }
+    BPatch_image *appImage = app->getImage();
     if (!app->loadLibrary(oracle_library)) {
         cerr << "Failed to load binary" << endl;
+        return EXIT_FAILURE;
     }
-    save_rdi = __oracle_findFuncByName(appImage, (char *)"__oracle_save_rdi");
-    restore_rdi = __oracle_findFuncByName(appImage, (char *)"__oracle_restore_rdi");
-    oracle_trap_hit = __oracle_findFuncByName(appImage, (char *)"__oracle_trap_hit");
-    if (save_rdi == NULL || restore_rdi == NULL || oracle_trap_hit == NULL) {
+    save_rdi = findFuncByName(appImage, (char *)"__oracle_save_rdi");
+    restore_rdi = findFuncByName(appImage, (char *)"__oracle_restore_rdi");
+    oracle_block_hit = findFuncByName(appImage, (char *)"__oracle_trap_hit");
+    if (save_rdi == NULL || restore_rdi == NULL || oracle_block_hit == NULL) {
         cerr << "Failed to find important functions" << endl;
-        exit(1);
+        return EXIT_FAILURE;
     }
     vector<BPatch_module *> *modules = appImage->getModules();
     vector<BPatch_module *>::iterator moduleIter;
@@ -194,6 +205,8 @@ void __oracle_init_dyninst(int argc, char ** argv) {
             }
         }
 
+        unsigned long long moduleBase = (unsigned long long)(*moduleIter)->getBaseAddr();
+        std::cout << "Module: " << curModuleName << " Base: 0x" << std::hex << moduleBase << std::dec << std::endl;
         /* Extract the module's functions and iterate through its basic blocks. */
         vector<BPatch_function *> *funcsInModule = (*moduleIter)->getProcedures();
         vector<BPatch_function *>::iterator funcIter;
@@ -201,12 +214,20 @@ void __oracle_init_dyninst(int argc, char ** argv) {
         for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
         {
             /* Go through each function's basic blocks and insert callbacks accordingly. */
-            __oracle_iterate_blocks(app, funcIter, &blkIndex);
+            iterate_blocks(app, funcIter, &blkIndex, moduleBase);
         }
     }
-    appProc->continueExecution();
-    // while (!appProc->isTerminated())
-    // {
-    //     bpatch.waitForStatusChange();
-    // }
+    /* If specified, save the instrumented binary and verify success. */
+    if (outputBinary.size() > 0)
+    {
+        if (verbose)
+            cout << "Saving the instrumented binary to " << outputBinary << " ..." << endl;
+        if (!app->writeFile(outputBinary.data()))
+        {
+            cerr << "Failed to write output file: " << outputBinary << endl;
+            return EXIT_FAILURE;
+        }
+    }
+    if (verbose)
+        cout << "All done!" << endl;
 }
