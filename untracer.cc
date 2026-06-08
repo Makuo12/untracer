@@ -150,7 +150,7 @@ bool __tracer_has_bit(void) {
     return found;
 }
 
-void modify_oracle(string &path_to_oracle, vector<u64> &list, map<u64, char> &breakpoint)
+void modify_oracle(string &path_to_oracle, vector<u64> &list, map<u64, u8> &breakpoint)
 {
     u64 addr;
     char flag[1] = {(char)0xCC};
@@ -172,7 +172,7 @@ void modify_oracle(string &path_to_oracle, vector<u64> &list, map<u64, char> &br
     oracle_file.close();
 }
 
-void unmodify_oracle(const std::string &path_to_oracle, std::map<u64, char>::iterator &breakpoint)
+void unmodify_oracle(const std::string &path_to_oracle, map<u64, u8> &breakpoint_remove)
 {
     std::fstream oracle_file(path_to_oracle, std::ios::in | std::ios::out | std::ios::binary);
     if (!oracle_file.is_open())
@@ -180,36 +180,33 @@ void unmodify_oracle(const std::string &path_to_oracle, std::map<u64, char>::ite
         FATAL_C("failed to open oracle file for restoration"); 
         return;
     }
-
-    auto addr = breakpoint->first;
-    if (addr != 0)
+    for (auto begin = breakpoint_remove.begin(); begin != breakpoint_remove.end(); ++begin)
     {
-        u8 flag = 0;
-
-        oracle_file.seekg(addr, std::ios::beg);
-        if (oracle_file.read((char *)&flag, 1))
+        auto addr = begin->first;
+        if (addr != 0)
         {
-            if (flag == 0xCC)
+            u8 flag = 0;
+
+            oracle_file.seekg(addr, std::ios::beg);
+            if (oracle_file.read((char *)&flag, 1))
             {
-                SAY("Flag is 0xCC (Breakpoint hit marker)");
-            }
-            else
-            {
-                SAY("Flag is not 0xCC");
+                if (flag == 0xCC)
+                {
+                    oracle_file.seekp(addr, std::ios::beg);
+                    char original_byte = begin->second;
+                    oracle_file.write(&original_byte, 1);
+                    if (!oracle_file.good())
+                    {
+                        SAY("Warning: Failed to write original byte back to binary!");
+                    }
+                }
+                else
+                {
+                    SAY("Flag is not 0xCC");
+                }
             }
         }
-
-        oracle_file.clear();
-
-        oracle_file.seekp(addr, std::ios::beg);
-
-        char original_byte = breakpoint->second;
-        oracle_file.write(&original_byte, 1);
-
-        if (!oracle_file.good())
-        {
-            SAY("Warning: Failed to write original byte back to binary!");
-        }
+        breakpoint_remove.erase(begin);
     }
 
     oracle_file.close();
@@ -327,7 +324,8 @@ void create_copy_oracle(string &path_to_oracle) {
 int main(int argc, char **argv)
 {
     vector<u64> bblist;
-    map<u64, char> breakpoint;
+    map<u64, u8> breakpoint;
+    map<u64, u8> breakpoint_remove;
     string path_to_oracle;
     string path_to_trace;
     string path_to_bblock;
@@ -364,7 +362,7 @@ int main(int argc, char **argv)
     __tracer_init_trace_bits();
     __tracer_init_virgin_bits();
     setup_bblist(bblist, path_to_bblock);
-    create_copy_oracle(path_to_oracle);
+    // create_copy_oracle(path_to_oracle);
     modify_oracle(path_to_oracle, bblist, breakpoint);
 
     // Remaining args after options (e.g. target binary args)
@@ -383,6 +381,7 @@ int main(int argc, char **argv)
             exit(1);
         }
         int status;
+        unmodify_oracle(path_to_oracle, breakpoint_remove);
         while (can_run)
         {
             waitpid(pid, &status, 0);
@@ -458,7 +457,7 @@ int main(int argc, char **argv)
 
                         regs.rip = vaddr;
                         ptrace(PTRACE_SETREGS, pid, NULL, &regs);
-                        unmodify_oracle(path_to_oracle, found);
+                        breakpoint_remove[found->first] = found->second;
                         breakpoint.erase(found);
                     }
                     else

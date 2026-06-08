@@ -21,7 +21,6 @@ lib_items = []
 def create_input(size):
     test = "pdf_test"
     output = "output"
-    shutil.rmtree(output, ignore_errors=True)
     os.makedirs(output, exist_ok=True)
     if (test == "test"):
         os.makedirs(test, exist_ok=True)
@@ -223,10 +222,10 @@ def setup_oracle_pdftotext(include="-I ./include"):
     if result.returncode != 0:
         print(f"Copy failed:\n{result.stderr}")
         exit(1)
-    result = subprocess.run(["strip", output])
-    if result.returncode != 0:
-        print(f"Copy failed:\n{result.stderr}")
-        exit(1)
+    # result = subprocess.run(["strip", output])
+    # if result.returncode != 0:
+    #     print(f"Copy failed:\n{result.stderr}")
+    #     exit(1)
     print(f"Oracle pdftotext built -> {output}")
 
 
@@ -277,10 +276,10 @@ def setup_tracer_pdftotext(include="-I ./include"):
     if result.returncode != 0:
         print(f"Copy failed:\n{result.stderr}")
         exit(1)
-    result = subprocess.run(["strip", output])
-    if result.returncode != 0:
-        print(f"Copy failed:\n{result.stderr}")
-        exit(1)
+    # result = subprocess.run(["strip", output])
+    # if result.returncode != 0:
+    #     print(f"Copy failed:\n{result.stderr}")
+    #     exit(1)
     print(f"Tracer pdftotext built -> {output}")
 
 def setup_untracer(compiler="g++", include="-I ./include"):
@@ -292,7 +291,7 @@ def setup_untracer(compiler="g++", include="-I ./include"):
         
 def run_untracer():
     # cerr << "Usage: " << argv[0] << " -o <oracle> -t <trace> -b <bblock> -i <input>" << endl;
-    result = subprocess.run(["./untracer.elf", "-t", "./output/tracer_instrumented.elf", "-b", "./output/.bblist", "-o", "./build/oracle.elf"])
+    result = subprocess.run(["./untracer.elf", "-t", "./build/tracer_instrumented.elf", "-b", "./output/.bblist", "-o", "./build/pdftotext.oracle"])
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
@@ -312,8 +311,8 @@ def main():
     setup_tracer_pdftotext()
     setup_trace_dyninst(headers=headers, filename="./build/pdftotext.trace")
     setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
-    # setup_untracer()
-    # run_untracer()
+    setup_untracer()
+    run_untracer()
     #create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
     # create_elf(compiler, target_name)
     # result = subprocess.run(["./oracle.elf", input_file])

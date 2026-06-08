@@ -165,7 +165,7 @@ int main(int argc, char **argv) {
     bpatch.setDelayedParsing(true);
     bpatch.setLivenessAnalysis(false);
     bpatch.setMergeTramp(false);
-    string outputBinary("./output/oracle_instrumented.elf");
+    string outputBinary("./build/oracle_instrumented.elf");
     int blkIndex = 0;
     BPatch_binaryEdit *app = bpatch.openBinary(argv[1]);
     if (app == NULL)

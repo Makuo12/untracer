@@ -18,7 +18,7 @@ void __oracle_init(Entry **entries, int *entry_count, const char *input_file)
     const char *env_in = getenv(IN_DIR_ENV);
     const char *env_out = getenv(OUT_DIR_ENV);
 
-    const char *in_dir = env_in ? env_in : "test";
+    const char *in_dir = env_in ? env_in : "pdf_test";
     const char *out_dir = env_out ? env_out : "output";
 
     // 2. Validate string lengths (equivalent to .size() == 0 or empty checking)
