@@ -23,6 +23,7 @@ int process_going(std::vector<char> &data)
 
 int main(int argc, char *argv[])
 {
+    // std::cout << "running" << std::endl;
     if (argc < 2)
     {
         std::cerr << "Usage: " << argv[0] << " <input_file>" << std::endl;

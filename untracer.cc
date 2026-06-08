@@ -88,6 +88,17 @@ void __tracer_init_trace_bits(void) {
 
 static u8 __trace_count_class_lookup8[256];
 
+void __tracer_init_count_class16(void)
+{
+
+    u32 b1, b2;
+    for (b1 = 0; b1 < 256; b1++)
+        for (b2 = 0; b2 < 256; b2++)
+            __trace_class_lookup16[(b1 << 8) + b2] =
+                (__trace_count_class_lookup8[b1] << 8) |
+                __trace_count_class_lookup8[b2];
+}
+
 
 void __tracer_init_class_lookup16() {
     __trace_count_class_lookup8[0] = 0;
@@ -99,18 +110,9 @@ void __tracer_init_class_lookup16() {
     for (int i = 16;  i <= 31;  i++) __trace_count_class_lookup8[i] = 32;
     for (int i = 32;  i <= 127; i++) __trace_count_class_lookup8[i] = 64;
     for (int i = 128; i <= 255; i++) __trace_count_class_lookup8[i] = 128;
+    __tracer_init_count_class16();
 }
 
-void __tracer_init_count_class16(void)
-{
-
-    u32 b1, b2;
-    for (b1 = 0; b1 < 256; b1++)
-        for (b2 = 0; b2 < 256; b2++)
-            __trace_class_lookup16[(b1 << 8) + b2] =
-                (__trace_count_class_lookup8[b1] << 8) |
-                __trace_count_class_lookup8[b2];
-}
 
 void __tracer_classify_counts(u64 *mem) {
     u32 i = MAP_SIZE >> 3;
@@ -267,7 +269,7 @@ int main(int argc, char **argv)
 {
     vector<u64> bblist;
     map<u64, char> breakpoint;
-
+    bool first_stop = true;
     string path_to_oracle;
     string path_to_trace;
     string path_to_bblock;
@@ -303,7 +305,6 @@ int main(int argc, char **argv)
     __tracer_init_class_lookup16();
     __tracer_init_trace_bits();
     __tracer_init_virgin_bits();
-    __tracer_init_count_class16();
     setup_bblist(bblist, path_to_bblock);
     modify_oracle(path_to_oracle, bblist, breakpoint);
 
@@ -325,12 +326,17 @@ int main(int argc, char **argv)
         if (WIFEXITED(status))
         {
             cout << "child exited" << endl;
-            break; // Child is done
+            exit(1);
         }
         if (WIFSTOPPED(status))
         {
             int sig = WSTOPSIG(status);
             if (sig == SIGTRAP) {
+                if (first_stop) {
+                    first_stop = false;
+                    ptrace(PTRACE_CONT, pid, NULL, 0);
+                    continue;
+                }
                 trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir);
                 struct user_regs_struct regs;
                 ptrace(PTRACE_GETREGS, pid, NULL, &regs);
@@ -345,9 +351,9 @@ int main(int argc, char **argv)
                 if (found != breakpoint.end())
                 {
                     printf("original byte stored: 0x%02x\n", (u8)found->second);
-                    cout << "original byte stored: 0x" << std::hex << (u8)found->second << std::dec << endl;
+                    // cout << "original byte stored: 0x" << std::hex << (u8)found->second << std::dec << endl;
                     u64 data = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
-                    cout << "byte at vaddr before restore: 0x" << std::hex << (u8)data << std::dec << endl;
+                    // cout << "byte at vaddr before restore: 0x" << std::hex << (u8)data << std::dec << endl;
                     u64 restored = (data & ~0xFF) | (u8)found->second;
                     errno = 0;
                     if (ptrace(PTRACE_POKETEXT, pid, vaddr, restored) == -1) {
@@ -355,9 +361,10 @@ int main(int argc, char **argv)
                         exit(1);
                     }
                     u64 verify = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
-                    cout << "byte at vaddr after restore: " << std::hex << (u8)verify << std::dec << endl;
+                    // cout << "byte at vaddr after restore: " << std::hex << (u8)verify << std::dec << endl;
                     regs.rip = vaddr;
                     ptrace(PTRACE_SETREGS, pid, NULL, &regs);
+                    breakpoint.erase(found);
                 }
 
                 // Tell the SAME child to keep running
