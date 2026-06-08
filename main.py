@@ -129,17 +129,6 @@ def setup_tracer(compiler="g++", include="-I ./include", headers = ""):
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
-    names = " ".join(item for item in lib_items)
-    dyninst_elf = f"{compiler} {include} {headers} ./tracer/tracer_dyninst.cc -L./libs -Wl,-rpath,./libs -Wl,--start-group {names} -ltracer -Wl,--end-group -o ./build/tracer_dyninst.elf"
-    print(dyninst_elf)
-    result = subprocess.run(dyninst_elf, shell=True, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
-    result = subprocess.run(["./build/tracer_dyninst.elf", "./build/tracer.elf"])
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
 
 def setup_oracle(compiler="g++", include="-I ./include", headers = ""):
     forkserver = "./oracle/forkserver.c"
@@ -160,6 +149,21 @@ def setup_oracle(compiler="g++", include="-I ./include", headers = ""):
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
+
+def setup_trace_dyninst(compiler="g++", include="-I ./include", headers = "", filename = ""):
+    names = " ".join(item for item in lib_items)
+    dyninst_elf = f"{compiler} {include} {headers} ./tracer/tracer_dyninst.cc -L./libs -Wl,-rpath,./libs -Wl,--start-group {names} -ltracer -Wl,--end-group -o ./build/tracer_dyninst.elf"
+    print(dyninst_elf)
+    result = subprocess.run(dyninst_elf, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+    result = subprocess.run(["./build/tracer_dyninst.elf", filename])
+    if result.returncode != 0:
+        print(f"Compilation failed:\n{result.stderr}")
+        exit(1)
+
+def setup_oracle_dyninst(compiler="g++", include="-I ./include", headers = "", filename = ""):
     names = " ".join(item for item in lib_items)
     dyninst_elf = f"{compiler} {include} {headers} ./oracle/oracle_dyninst.cc -L./libs -Wl,-rpath,./libs -Wl,--start-group {names} -Wl,--end-group -o ./build/oracle_dyninst.elf"
     print(dyninst_elf)
@@ -167,7 +171,7 @@ def setup_oracle(compiler="g++", include="-I ./include", headers = ""):
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
-    result = subprocess.run(["./build/oracle_dyninst.elf", "./build/oracle.elf"])
+    result = subprocess.run(["./build/oracle_dyninst.elf", filename])
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
@@ -176,7 +180,7 @@ def setup_oracle_pdftotext(include="-I ./include"):
     xpdf_dir = "/home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2"
     libs_dir = "/home/makuo12/Documents/forte-research/untracer/libs"
     obj_dir = "/home/makuo12/Documents/forte-research/untracer/build"
-    output = "/home/makuo12/Documents/forte-research/untracer/target/pdftotext.oracle"
+    output = "/home/makuo12/Documents/forte-research/untracer/build/pdftotext.oracle"
 
     # Step 1: compile forkserver
     forkserver = "./oracle/forkserver.c"
@@ -189,6 +193,7 @@ def setup_oracle_pdftotext(include="-I ./include"):
 
     # Step 2: cmake configure
     build_dir = f"{xpdf_dir}/build"
+    shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir, exist_ok=True)
 
     cmake_cmd = (
@@ -198,7 +203,7 @@ def setup_oracle_pdftotext(include="-I ./include"):
         f"-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY "
         f"-DCMAKE_CXX_FLAGS=\"-fno-pie\" "
         f"-DCMAKE_C_FLAGS=\"-fno-pie\" "
-        f"-DCMAKE_EXE_LINKER_FLAGS=\"-L{libs_dir} -loracle -no-pie -Wl,--wrap=main {object_file}\" "
+        f"-DCMAKE_EXE_LINKER_FLAGS=\"{object_file} -Wl,--wrap=main -L{libs_dir} -Wl,-rpath,{libs_dir} -no-pie -loracle\" "
         f"{xpdf_dir}/"
     )
     print(cmake_cmd)
@@ -218,7 +223,10 @@ def setup_oracle_pdftotext(include="-I ./include"):
     if result.returncode != 0:
         print(f"Copy failed:\n{result.stderr}")
         exit(1)
-
+    # result = subprocess.run(["strip", output])
+    # if result.returncode != 0:
+    #     print(f"Copy failed:\n{result.stderr}")
+    #     exit(1)
     print(f"Oracle pdftotext built -> {output}")
 
 
@@ -226,7 +234,7 @@ def setup_tracer_pdftotext(include="-I ./include"):
     xpdf_dir = "/home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2"
     libs_dir = "/home/makuo12/Documents/forte-research/untracer/libs"
     obj_dir = "/home/makuo12/Documents/forte-research/untracer/build"
-    output = "/home/makuo12/Documents/forte-research/untracer/target/pdftotext.trace"
+    output = "/home/makuo12/Documents/forte-research/untracer/build/pdftotext.trace"
 
     # Step 1: compile forkserver
     forkserver = "./tracer/forkserver.c"
@@ -239,6 +247,7 @@ def setup_tracer_pdftotext(include="-I ./include"):
 
     # Step 2: cmake configure
     build_dir = f"{xpdf_dir}/build"
+    shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir, exist_ok=True)
 
     cmake_cmd = (
@@ -248,7 +257,7 @@ def setup_tracer_pdftotext(include="-I ./include"):
         f"-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY "
         f"-DCMAKE_CXX_FLAGS=\"-fno-pie\" "
         f"-DCMAKE_C_FLAGS=\"-fno-pie\" "
-        f"-DCMAKE_EXE_LINKER_FLAGS=\"-L{libs_dir} -ltracer -no-pie -Wl,--wrap=main {object_file}\" "
+        f"-DCMAKE_EXE_LINKER_FLAGS=\"{object_file} -Wl,--wrap=main -L{libs_dir} -Wl,-rpath,{libs_dir} -no-pie -ltracer\" "
         f"{xpdf_dir}/"
     )
     print(cmake_cmd)
@@ -268,7 +277,10 @@ def setup_tracer_pdftotext(include="-I ./include"):
     if result.returncode != 0:
         print(f"Copy failed:\n{result.stderr}")
         exit(1)
-
+    # result = subprocess.run(["strip", output])
+    # if result.returncode != 0:
+    #     print(f"Copy failed:\n{result.stderr}")
+    #     exit(1)
     print(f"Tracer pdftotext built -> {output}")
 
 def setup_untracer(compiler="g++", include="-I ./include"):
@@ -293,11 +305,15 @@ def main():
         headers = "-I " + headers
     create_input(10)
     create_libs(headers = headers)
-    setup_tracer(headers = headers)
-    setup_oracle(headers = headers) 
+    # setup_tracer(headers = headers)
+    # setup_oracle(headers = headers) 
     input_file = create_arguments()
-    setup_untracer()
-    run_untracer()
+    setup_oracle_pdftotext()
+    setup_tracer_pdftotext()
+    setup_trace_dyninst(headers=headers, filename="./build/pdftotext.trace")
+    setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
+    # setup_untracer()
+    # run_untracer()
     #create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
     # create_elf(compiler, target_name)
     # result = subprocess.run(["./oracle.elf", input_file])
