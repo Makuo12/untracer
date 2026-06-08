@@ -172,6 +172,105 @@ def setup_oracle(compiler="g++", include="-I ./include", headers = ""):
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
 
+def setup_oracle_pdftotext(include="-I ./include"):
+    xpdf_dir = "/home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2"
+    libs_dir = "/home/makuo12/Documents/forte-research/untracer/libs"
+    obj_dir = "/home/makuo12/Documents/forte-research/untracer/build"
+    output = "/home/makuo12/Documents/forte-research/untracer/target/pdftotext.oracle"
+
+    # Step 1: compile forkserver
+    forkserver = "./oracle/forkserver.c"
+    object_file = f"{obj_dir}/oracle_forkserver.o"
+    oracle_o = f"gcc {include} {forkserver} -c -o {object_file}"
+    result = subprocess.run(oracle_o, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Oracle forkserver compilation failed:\n{result.stderr}")
+        exit(1)
+
+    # Step 2: cmake configure
+    build_dir = f"{xpdf_dir}/build"
+    os.makedirs(build_dir, exist_ok=True)
+
+    cmake_cmd = (
+        f"cmake -DCMAKE_BUILD_TYPE=Release "
+        f"-DCMAKE_C_COMPILER=gcc "
+        f"-DCMAKE_CXX_COMPILER=g++ "
+        f"-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY "
+        f"-DCMAKE_CXX_FLAGS=\"-fno-pie\" "
+        f"-DCMAKE_C_FLAGS=\"-fno-pie\" "
+        f"-DCMAKE_EXE_LINKER_FLAGS=\"-L{libs_dir} -loracle -no-pie -Wl,--wrap=main {object_file}\" "
+        f"{xpdf_dir}/"
+    )
+    print(cmake_cmd)
+    result = subprocess.run(cmake_cmd, shell=True, cwd=build_dir, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"CMake configuration failed:\n{result.stderr}")
+        exit(1)
+
+    # Step 3: make pdftotext
+    result = subprocess.run("make pdftotext", shell=True, cwd=build_dir, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Make failed:\n{result.stderr}")
+        exit(1)
+
+    # Step 4: copy output
+    result = subprocess.run(f"cp {build_dir}/xpdf/pdftotext {output}", shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Copy failed:\n{result.stderr}")
+        exit(1)
+
+    print(f"Oracle pdftotext built -> {output}")
+
+
+def setup_tracer_pdftotext(include="-I ./include"):
+    xpdf_dir = "/home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2"
+    libs_dir = "/home/makuo12/Documents/forte-research/untracer/libs"
+    obj_dir = "/home/makuo12/Documents/forte-research/untracer/build"
+    output = "/home/makuo12/Documents/forte-research/untracer/target/pdftotext.trace"
+
+    # Step 1: compile forkserver
+    forkserver = "./tracer/forkserver.c"
+    object_file = f"{obj_dir}/tracer_forkserver.o"
+    tracer_o = f"gcc {include} {forkserver} -c -o {object_file}"
+    result = subprocess.run(tracer_o, shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Tracer forkserver compilation failed:\n{result.stderr}")
+        exit(1)
+
+    # Step 2: cmake configure
+    build_dir = f"{xpdf_dir}/build"
+    os.makedirs(build_dir, exist_ok=True)
+
+    cmake_cmd = (
+        f"cmake -DCMAKE_BUILD_TYPE=Release "
+        f"-DCMAKE_C_COMPILER=gcc "
+        f"-DCMAKE_CXX_COMPILER=g++ "
+        f"-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY "
+        f"-DCMAKE_CXX_FLAGS=\"-fno-pie\" "
+        f"-DCMAKE_C_FLAGS=\"-fno-pie\" "
+        f"-DCMAKE_EXE_LINKER_FLAGS=\"-L{libs_dir} -ltracer -no-pie -Wl,--wrap=main {object_file}\" "
+        f"{xpdf_dir}/"
+    )
+    print(cmake_cmd)
+    result = subprocess.run(cmake_cmd, shell=True, cwd=build_dir, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"CMake configuration failed:\n{result.stderr}")
+        exit(1)
+
+    # Step 3: make pdftotext
+    result = subprocess.run("make pdftotext", shell=True, cwd=build_dir, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Make failed:\n{result.stderr}")
+        exit(1)
+
+    # Step 4: copy output
+    result = subprocess.run(f"cp {build_dir}/xpdf/pdftotext {output}", shell=True, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"Copy failed:\n{result.stderr}")
+        exit(1)
+
+    print(f"Tracer pdftotext built -> {output}")
+
 def setup_untracer(compiler="g++", include="-I ./include"):
     untracer_elf = f"{compiler} {include} untracer.cc -o untracer.elf"
     result = subprocess.run(untracer_elf, shell=True, stderr=subprocess.PIPE, text=True)

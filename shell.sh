@@ -1,5 +1,7 @@
 
 echo "Building xpdf..."
+gcc -I ./include ./oracle/forkserver.c -c -o ./build/oracle_forkserver.o
+gcc -I ./include ./tracer/forkserver.c -c -o ./build/tracer_forkserver.o
 cd /home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2
 rm -rf build
 mkdir -p build && cd build
@@ -9,8 +11,8 @@ cmake -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
         -DCMAKE_CXX_FLAGS="/home/makuo12/Documents/forte-research/untracer/libs/liboracle.so -fno-pie" \
         -DCMAKE_C_FLAGS="/home/makuo12/Documents/forte-research/untracer/libs/liboracle.so -fno-pie" \
-        -DCMAKE_EXE_LINKER_FLAGS="-L/home/makuo12/Documents/forte-research/untracer/libs -loracle -no-pie" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/home/makuo12/Documents/forte-research/untracer/libs -loracle -no-pie " \
         ../
 make pdftotext
-cp pdftotext /home/makuo12/Documents/forte-research/untracer/target/pdftotext
+cp ./xpdf/pdttotext /home/makuo12/Documents/forte-research/untracer/pdftotext.trace
 cd ../..
