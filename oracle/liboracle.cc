@@ -1,11 +1,10 @@
 #include "liboracle.h"
 #include <fstream>
 #include "logger.h"
-#include <stdlib.h>
+#include <cstring>
 #include "types.h"
 
 using std::string;
-using std::vector;
 using std::ofstream;
 
 u64 *trap_block_ids;

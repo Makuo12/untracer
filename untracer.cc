@@ -350,21 +350,34 @@ int main(int argc, char **argv)
 
                 if (found != breakpoint.end())
                 {
-                    printf("original byte stored: 0x%02x\n", (u8)found->second);
-                    // cout << "original byte stored: 0x" << std::hex << (u8)found->second << std::dec << endl;
+                    printf("[BP RESTORE] vaddr=0x%lx | original_byte=0x%02x\n",
+                        (unsigned long)vaddr, (u8)found->second);
+
                     u64 data = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
-                    // cout << "byte at vaddr before restore: 0x" << std::hex << (u8)data << std::dec << endl;
-                    u64 restored = (data & ~0xFF) | (u8)found->second;
+                    printf("[BP RESTORE] word_before=0x%016lx | low_byte=0x%02x\n",
+                        (unsigned long)data, (u8)data);
+
+                    u64 restored = (data & ~0xFFULL) | (u8)found->second;
+                    printf("[BP RESTORE] word_after =0x%016lx | low_byte=0x%02x\n",
+                        (unsigned long)restored, (u8)restored);
+
                     errno = 0;
-                    if (ptrace(PTRACE_POKETEXT, pid, vaddr, restored) == -1) {
-                        perror("PTRACE_POKETEXT failed");
+                    if (ptrace(PTRACE_POKETEXT, pid, vaddr, restored) == -1)
+                    {
+                        perror("[BP RESTORE] PTRACE_POKETEXT failed");
                         exit(1);
                     }
+
                     u64 verify = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
-                    // cout << "byte at vaddr after restore: " << std::hex << (u8)verify << std::dec << endl;
+                    printf("[BP RESTORE] word_verify=0x%016lx | low_byte=0x%02x | %s\n",
+                        (unsigned long)verify, (u8)verify,
+                        ((u8)verify == (u8)found->second) ? "OK" : "MISMATCH!");
+
                     regs.rip = vaddr;
                     ptrace(PTRACE_SETREGS, pid, NULL, &regs);
                     breakpoint.erase(found);
+                } else {
+                    printf("Address not found at RIP: %lld\n", file_off);
                 }
 
                 // Tell the SAME child to keep running

@@ -111,9 +111,9 @@ def create_elf(compiler, target_name):
 
 def setup_tracer(compiler="g++", include="-I ./include", headers = ""):
 
-    forkserver = "./tracer/forkserver.cc"
+    forkserver = "./tracer/forkserver.c"
     object_file = "./build/tracer_forkserver.o"
-    tracer_o = f"{compiler} {include} {forkserver} -c -o {object_file}"
+    tracer_o = f"gcc {include} {forkserver} -c -o {object_file}"
     result = subprocess.run(tracer_o, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
@@ -142,9 +142,9 @@ def setup_tracer(compiler="g++", include="-I ./include", headers = ""):
         exit(1)
 
 def setup_oracle(compiler="g++", include="-I ./include", headers = ""):
-    forkserver = "./oracle/forkserver.cc"
+    forkserver = "./oracle/forkserver.c"
     object_file = "./build/oracle_forkserver.o"
-    oracle_o = f"{compiler} {include} {headers} {forkserver} -c -o {object_file}"
+    oracle_o = f"gcc {include} {headers} {forkserver} -c -o {object_file}"
     result = subprocess.run(oracle_o, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")

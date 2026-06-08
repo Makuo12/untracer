@@ -1,9 +1,9 @@
 #ifndef TYPES_H_
 #define TYPES_H_
-using u8 = unsigned char;
-using u32 = unsigned int;
-using u64 = unsigned long long;
-using u16 = unsigned short;
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef unsigned int u32;
+typedef unsigned long long u64;
 
 #define unlikely(x) \
     __builtin_expect(!!(x), 0)

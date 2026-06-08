@@ -9,6 +9,7 @@
 #include "logger.h"
 #include "config.h"
 #include "data.h"
+#include "types.h"
 #include "liboracle.h"
 
 void __oracle_apply(u8 * mem, int position) {
@@ -31,11 +32,10 @@ void __oracle_fuzz(int argc, char **argv, Entry *entries, int entry_count, const
         int fd = open(entry->file_path, O_RDONLY);
         if (fd < 0)
         {
-            entry->has_issues = true;
+            entry->has_issues = 1;
             // Combined messages since C doesn't natively parse {"message", string} initializer lists
             char err_msg[512];
             snprintf(err_msg, sizeof(err_msg), "Failed to open file: %s", entry->d_name);
-            FATAL(err_msg, false);
             continue;
         }
 
@@ -45,10 +45,9 @@ void __oracle_fuzz(int argc, char **argv, Entry *entries, int entry_count, const
 
         if (mem == MAP_FAILED)
         {
-            entry->has_issues = true;
+            entry->has_issues = 1;
             char err_msg[512];
             snprintf(err_msg, sizeof(err_msg), "Failed to map file: %s", entry->d_name);
-            FATAL(err_msg, false);
             continue;
         }
 
@@ -88,7 +87,7 @@ int __wrap_main(int argc, char **argv)
     // Check bounds before indexing argv
     if (argv[optind] == NULL)
     {
-        FATAL("Missing input file argument.", true);
+        FATAL_C("Missing input file argument.");
     }
     const char *input_file = argv[optind];
 
