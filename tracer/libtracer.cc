@@ -29,7 +29,7 @@ void __tracer_init_trace_bits(void)
 
 void __tracer_block_hit(int curblkId)
 {
-    if (trace_bits != NULL && trace_bits[curblkId] == 0)
+    if (trace_bits != NULL && trace_bits[curblkId] == 0 && curblkId < MAP_SIZE)
     {
         trace_bits[curblkId]++;
     }

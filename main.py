@@ -19,19 +19,19 @@ INPUT_FILE_ENV = "input_file"
 lib_items = []
 
 def create_input(size):
-    test = "test"
-    shutil.rmtree(test, ignore_errors=True)
-    shutil.rmtree("output", ignore_errors=True)
-    os.makedirs("test", exist_ok=True)
-    os.makedirs("output", exist_ok=True)
-    for i in range(size):
-        filename = f"{test}_{i}"
-        path = os.path.join(test, filename)
-        with open(path, "w") as f:
-            text = ''.join(random.choices(string.ascii_letters, k=40))
-            f.write(text)
-
-            
+    test = "pdf_test"
+    output = "output"
+    shutil.rmtree(output, ignore_errors=True)
+    os.makedirs(output, exist_ok=True)
+    if (test == "test"):
+        os.makedirs(test, exist_ok=True)
+        shutil.rmtree(test, ignore_errors=True)
+        for i in range(size):
+            filename = f"{test}_{i}"
+            path = os.path.join(test, filename)
+            with open(path, "w") as f:
+                text = ''.join(random.choices(string.ascii_letters, k=40))
+                f.write(text)
 
 def create_libs(compiler="g++", include="-I ./include", headers = ""):
     shutil.rmtree("libs", ignore_errors=True)
