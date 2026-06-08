@@ -1,4 +1,3 @@
-
 #ifndef LIBORACLE_H_
 #define LIBORACLE_H_
 
@@ -16,23 +15,18 @@
 #include "logger.h"
 #include "types.h"
 #include "config.h"
-#include "BPatch_function.h"
+void __oracle_init(Entry **entries, int *entry_count, const char *input_file);
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+    void __oracle_write_testcase(u8 *mem, Entry *entry, const char *input_file);
+    void __oracle_init_shm(void);
+    int __real_main(int, char **);
 
 #ifdef __cplusplus
-#include <string>
-#include <algorithm>
-#include <cstring>
-#include <iostream>
-#include <cstdio>
-#include <cstdlib>
-#include <vector>
-#include <map>
-void __oracle_init(std::vector<Entry> &entries, std::string &input_file);
-void __oracle_apply(u8 * mem, int position);
-void __oracle_fuzz(std::vector<Entry> &entries, std::string &input_file);
-void __oracle_init_dyninst(int argc, char ** argv);
-void __oracle_fuzz(int argc, char **argv, std::vector<Entry> &entries, std::string &input_file);
+}
 #endif
 
-
-#endif
+#endif // u8 is in types

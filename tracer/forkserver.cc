@@ -1,33 +1,40 @@
 // forkserver.cc
-#include "libtracer.h"
+#include <stdlib.h>
+#include <string.h>
 #include <sys/shm.h>
+#include "logger.h"
+#include "config.h"
+#include "libtracer.h"
 
+static u8 *trace_bits = NULL;
 
-using std::string;
-u8 * trace_bits;
-
-extern "C" int __real_main(int argc, char **argv);
-
-void __tracer_init_trace_bits(void) {
-    string shm_str(getenv(SHM_ID_ENV) ? getenv(SHM_ID_ENV) : "");
-    if (shm_str.size() == 0) {
-        FATAL({"Environment variable", SHM_ID_ENV, "is not set"});
+void __tracer_init_trace_bits(void)
+{
+    const char *shm_env = getenv(SHM_ID_ENV);
+    if (shm_env == NULL || strlen(shm_env) == 0)
+    {
+        FATAL_C("Environment variable SHM_ID_ENV is not set");
     }
-    int shm_id = std::stoi(shm_str);
+
+    int shm_id = atoi(shm_env);
     trace_bits = (u8 *)shmat(shm_id, 0, 0);
-    if (trace_bits == (u8 *)-1) {
-        FATAL({"failed to link trace_bits to memory", shm_str});
+    if (trace_bits == (u8 *)-1)
+    {
+        trace_bits = NULL;
+        FATAL_C("Failed to link trace_bits to shared memory");
     }
 }
 
-void __tracer_block_hit(int curblkId) {
-    if (trace_bits && trace_bits[curblkId] < 255) {
+void __tracer_block_hit(int curblkId)
+{
+    if (trace_bits != NULL && trace_bits[curblkId] == 0)
+    {
         trace_bits[curblkId]++;
-        // SAY({"trace_bits", trace_bits[curblkId]});
     }
 }
 
-extern "C" int __wrap_main(int argc, char **argv) {
+int __wrap_main(int argc, char **argv)
+{
     __tracer_init_trace_bits();
     return __real_main(argc, argv);
 }
