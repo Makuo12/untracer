@@ -468,6 +468,7 @@ int main(int argc, char **argv)
             if (WIFEXITED(status))
             {
                 SAY("Child exited normally");
+                waitpid(pid, NULL, WNOHANG);
                 can_run = false;
                 break;
             }
@@ -478,6 +479,8 @@ int main(int argc, char **argv)
                 int term_sig = WTERMSIG(status);
                 printf("Child killed abruptly by signal %d\n", term_sig);
                 can_run = false;
+                // already dead if WIFSIGNALED, just reap any remaining state
+                waitpid(pid, NULL, WNOHANG);
                 break;
             }
 
@@ -489,6 +492,7 @@ int main(int argc, char **argv)
                     can_run = false;
                     printf("Child killed abruptly by signal %d\n", sig);
                     ptrace(PTRACE_KILL, pid, NULL, NULL);
+                    waitpid(pid, NULL, 0); // reap the child fully
                     break;
                 } else if (sig == SIGTRAP)
                 {
