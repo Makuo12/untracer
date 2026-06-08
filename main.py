@@ -223,10 +223,10 @@ def setup_oracle_pdftotext(include="-I ./include"):
     if result.returncode != 0:
         print(f"Copy failed:\n{result.stderr}")
         exit(1)
-    # result = subprocess.run(["strip", output])
-    # if result.returncode != 0:
-    #     print(f"Copy failed:\n{result.stderr}")
-    #     exit(1)
+    result = subprocess.run(["strip", output])
+    if result.returncode != 0:
+        print(f"Copy failed:\n{result.stderr}")
+        exit(1)
     print(f"Oracle pdftotext built -> {output}")
 
 
@@ -277,10 +277,10 @@ def setup_tracer_pdftotext(include="-I ./include"):
     if result.returncode != 0:
         print(f"Copy failed:\n{result.stderr}")
         exit(1)
-    # result = subprocess.run(["strip", output])
-    # if result.returncode != 0:
-    #     print(f"Copy failed:\n{result.stderr}")
-    #     exit(1)
+    result = subprocess.run(["strip", output])
+    if result.returncode != 0:
+        print(f"Copy failed:\n{result.stderr}")
+        exit(1)
     print(f"Tracer pdftotext built -> {output}")
 
 def setup_untracer(compiler="g++", include="-I ./include"):

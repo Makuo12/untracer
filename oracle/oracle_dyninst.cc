@@ -82,14 +82,15 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
     BPatch_funcCallExpr instExprRestRdi(*restore_rdi, instArgsDynfix);
     BPatch_funcCallExpr instExproracle(*oracle_block_hit, instArgs);
     BPatchSnippetHandle *handle;
-
+    bool failed = false;
     /* RDI fix handling. */
     if (dynfix)
         handle = appBin->insertSnippet(instExprSaveRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-
     /* Instruments the basic block. */
     handle = appBin->insertSnippet(instExproracle, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-
+    if (!handle) {
+        failed = true;
+    }
     /* Wrap up RDI fix handling. */
     if (dynfix)
         handle = appBin->insertSnippet(instExprRestRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
@@ -98,7 +99,7 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
     {
         cerr << "Failed to insert oracle callback at 0x" << std::hex << curBlkAddr << std::endl;
     }
-    if (handle)
+    if (handle || failed)
     {
         /* If path to output instrumented bb addrs list set, save the addresses of each basic block instrumented to that file. */
         ofstream blksListFile("./output/.bblist", std::ios::app);
