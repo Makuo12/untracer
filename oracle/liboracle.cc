@@ -102,7 +102,7 @@ extern "C"
 #endif
 
 void __oracle_write_testcase(u8 * mem, Entry * entry, const char *input_file) {
-    ofstream file(input_file);
+    ofstream file(input_file, std::ios::binary);
     if (!file.is_open()) {
         FATAL_C("failed to open input file");
     }

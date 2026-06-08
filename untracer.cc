@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
+#include <iterator>
 #include <random>
 #include <sstream>
 #include <iomanip>
@@ -27,9 +28,10 @@
 
 using std::string;
 using std::vector;
+using std::fstream;
+using std::iterator;
 using std::ifstream;
 using std::ofstream;
-using std::fstream;
 using std::map;
 using std::cout;
 using std::cerr;
@@ -169,9 +171,52 @@ void modify_oracle(string &path_to_oracle, vector<u64> &list, map<u64, char> &br
     }
     oracle_file.close();
 }
+
+void unmodify_oracle(const std::string &path_to_oracle, std::map<u64, char>::iterator &breakpoint)
+{
+    std::fstream oracle_file(path_to_oracle, std::ios::in | std::ios::out | std::ios::binary);
+    if (!oracle_file.is_open())
+    {
+        FATAL_C("failed to open oracle file for restoration"); 
+        return;
+    }
+
+    auto addr = breakpoint->first;
+    if (addr != 0)
+    {
+        u8 flag = 0;
+
+        oracle_file.seekg(addr, std::ios::beg);
+        if (oracle_file.read((char *)&flag, 1))
+        {
+            if (flag == 0xCC)
+            {
+                SAY("Flag is 0xCC (Breakpoint hit marker)");
+            }
+            else
+            {
+                SAY("Flag is not 0xCC");
+            }
+        }
+
+        oracle_file.clear();
+
+        oracle_file.seekp(addr, std::ios::beg);
+
+        char original_byte = breakpoint->second;
+        oracle_file.write(&original_byte, 1);
+
+        if (!oracle_file.good())
+        {
+            SAY("Warning: Failed to write original byte back to binary!");
+        }
+    }
+
+    oracle_file.close();
+}
 void setup_bblist(vector<u64> &list, const string &path_to_bblock)
 {
-    ifstream file(path_to_bblock); // was hardcoded "./output/.bblist"
+    ifstream file(path_to_bblock); 
     string buf;
     while ((getline(file, buf)))
     {
@@ -187,7 +232,7 @@ std::string generateRandomFilename(const std::string& extension = ".txt") {
     static const std::string chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
     std::uniform_int_distribution<size_t> charDist(0, chars.size() - 1);
-    std::uniform_int_distribution<int> lengthDist(8, 16); // filename length between 8 and 16
+    std::uniform_int_distribution<int> lengthDist(8, 16); 
 
     int length = lengthDist(rng);
     std::string filename;
@@ -196,8 +241,8 @@ std::string generateRandomFilename(const std::string& extension = ".txt") {
     for (int i = 0; i < length; i++) {
         filename += chars[charDist(rng)];
     }
-
-    return filename + extension;
+    filename += extension;
+    return filename;
 }
 
 void trace(const string &path_to_oracle, const string &path_to_trace, const string &path_to_input, string &in_dir, string &out_dir)
@@ -265,11 +310,24 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
     }
 }
 
+void create_copy_oracle(string &path_to_oracle) {
+    string out_file_name("./output/oracle.elf");
+    ifstream in_file(path_to_oracle, std::ios::binary);
+    ofstream out_file(out_file_name, std::ios::binary);
+    if (!out_file.is_open() || !in_file.is_open()) {
+        FATAL({"failed to open files", path_to_oracle, out_file_name});
+    }
+    out_file << in_file.rdbuf();
+    out_file.close();
+    in_file.close();
+    path_to_oracle.clear();
+    path_to_oracle += out_file_name;
+}
+
 int main(int argc, char **argv)
 {
     vector<u64> bblist;
     map<u64, char> breakpoint;
-    bool first_stop = true;
     string path_to_oracle;
     string path_to_trace;
     string path_to_bblock;
@@ -306,83 +364,112 @@ int main(int argc, char **argv)
     __tracer_init_trace_bits();
     __tracer_init_virgin_bits();
     setup_bblist(bblist, path_to_bblock);
+    create_copy_oracle(path_to_oracle);
     modify_oracle(path_to_oracle, bblist, breakpoint);
 
     // Remaining args after options (e.g. target binary args)
     char *args[] = {(char *)path_to_oracle.c_str(), (char *)path_to_input.c_str(), NULL};
-
-    pid_t pid = fork();
-    if (pid == 0)
-    {
-        // Child
-        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-        execvp(args[0], args);
-        exit(1);
-    }
-    int status;
+    bool first_stop = true;
     while (true)
     {
-        waitpid(pid, &status, 0);
-        if (WIFEXITED(status))
+        first_stop = true;
+        bool can_run = true;
+        pid_t pid = fork();
+        if (pid == 0)
         {
-            cout << "child exited" << endl;
+            // Child
+            ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+            execvp(args[0], args);
             exit(1);
         }
-        if (WIFSTOPPED(status))
+        int status;
+        while (can_run)
         {
-            int sig = WSTOPSIG(status);
-            if (sig == SIGTRAP) {
-                if (first_stop) {
-                    first_stop = false;
+            waitpid(pid, &status, 0);
+            // 1. Normal Termination
+            if (WIFEXITED(status))
+            {
+                SAY("Child exited normally");
+                can_run = false;
+                break;
+            }
+
+            // 2. Killed by an unhandled signal (Abrupt Crash)
+            if (WIFSIGNALED(status))
+            {
+                int term_sig = WTERMSIG(status);
+                printf("Child killed abruptly by signal %d\n", term_sig);
+                can_run = false;
+                break;
+            }
+
+            if (WIFSTOPPED(status))
+            {
+                int sig = WSTOPSIG(status);
+                if (sig == SIGSEGV || sig == SIGILL || sig == SIGBUS || sig == SIGABRT)
+                {
+                    can_run = false;
+                    printf("Child killed abruptly by signal %d\n", sig);
+                    ptrace(PTRACE_KILL, pid, NULL, NULL);
+                    break;
+                } else if (sig == SIGTRAP)
+                {
+                    if (first_stop)
+                    {
+                        first_stop = false;
+                        ptrace(PTRACE_CONT, pid, NULL, 0);
+                        continue;
+                    }
+                    trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir);
+                    struct user_regs_struct regs;
+                    ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+
+                    // This will print 40147b the FIRST time
+                    // And it will print 401171 (your breakpoint) the SECOND time
+                    u64 vaddr = regs.rip - 1;
+                    u64 file_off = vaddr - 0x400000;
+                    printf("Child stopped at RIP: %lld\n", file_off);
+                    auto found = breakpoint.find(file_off);
+
+                    if (found != breakpoint.end())
+                    {
+                        printf("[BP RESTORE] vaddr=0x%lx | original_byte=0x%02x\n",
+                               (unsigned long)vaddr, (u8)found->second);
+
+                        u64 data = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
+                        printf("[BP RESTORE] word_before=0x%016lx | low_byte=0x%02x\n",
+                               (unsigned long)data, (u8)data);
+
+                        u64 restored = (data & ~0xFFULL) | (u8)found->second;
+                        printf("[BP RESTORE] word_after =0x%016lx | low_byte=0x%02x\n",
+                               (unsigned long)restored, (u8)restored);
+
+                        errno = 0;
+                        if (ptrace(PTRACE_POKETEXT, pid, vaddr, restored) == -1)
+                        {
+                            perror("[BP RESTORE] PTRACE_POKETEXT failed");
+                            exit(1);
+                        }
+
+                        u64 verify = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
+                        printf("[BP RESTORE] word_verify=0x%016lx | low_byte=0x%02x | %s\n",
+                               (unsigned long)verify, (u8)verify,
+                               ((u8)verify == (u8)found->second) ? "OK" : "MISMATCH!");
+
+                        regs.rip = vaddr;
+                        ptrace(PTRACE_SETREGS, pid, NULL, &regs);
+                        unmodify_oracle(path_to_oracle, found);
+                        breakpoint.erase(found);
+                    }
+                    else
+                    {
+                        printf("Address not found at RIP: %lld\n", file_off);
+                    }
                     ptrace(PTRACE_CONT, pid, NULL, 0);
                     continue;
                 }
-                trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir);
-                struct user_regs_struct regs;
-                ptrace(PTRACE_GETREGS, pid, NULL, &regs);
-
-                // This will print 40147b the FIRST time
-                // And it will print 401171 (your breakpoint) the SECOND time
-                u64 vaddr    = regs.rip - 1;
-                u64 file_off = vaddr - 0x400000;
-                printf("Child stopped at RIP: %lld\n", file_off);
-                auto found = breakpoint.find(file_off);
-
-                if (found != breakpoint.end())
-                {
-                    printf("[BP RESTORE] vaddr=0x%lx | original_byte=0x%02x\n",
-                        (unsigned long)vaddr, (u8)found->second);
-
-                    u64 data = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
-                    printf("[BP RESTORE] word_before=0x%016lx | low_byte=0x%02x\n",
-                        (unsigned long)data, (u8)data);
-
-                    u64 restored = (data & ~0xFFULL) | (u8)found->second;
-                    printf("[BP RESTORE] word_after =0x%016lx | low_byte=0x%02x\n",
-                        (unsigned long)restored, (u8)restored);
-
-                    errno = 0;
-                    if (ptrace(PTRACE_POKETEXT, pid, vaddr, restored) == -1)
-                    {
-                        perror("[BP RESTORE] PTRACE_POKETEXT failed");
-                        exit(1);
-                    }
-
-                    u64 verify = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
-                    printf("[BP RESTORE] word_verify=0x%016lx | low_byte=0x%02x | %s\n",
-                        (unsigned long)verify, (u8)verify,
-                        ((u8)verify == (u8)found->second) ? "OK" : "MISMATCH!");
-
-                    regs.rip = vaddr;
-                    ptrace(PTRACE_SETREGS, pid, NULL, &regs);
-                    breakpoint.erase(found);
-                } else {
-                    printf("Address not found at RIP: %lld\n", file_off);
-                }
-
-                // Tell the SAME child to keep running
+                ptrace(PTRACE_CONT, pid, NULL, sig == SIGTRAP ? 0 : sig);
             }
-            ptrace(PTRACE_CONT, pid, NULL, sig == SIGTRAP ? 0 : sig);
         }
     }
 
