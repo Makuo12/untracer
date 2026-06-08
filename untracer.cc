@@ -20,6 +20,8 @@
 #include <sys/stat.h>
 #include <sys/shm.h>
 #include <sys/mman.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "types.h"
 #include "config.h"
@@ -150,47 +152,69 @@ bool __tracer_has_bit(void) {
     return found;
 }
 
-bool copy_binary_file(const char *src_path, const char *dst_path)
+
+void copy_binary(char *src_path, char *dst_path)
 {
-    FILE *src = fopen(src_path, "rb");
-    if (!src)
+    struct stat st = {0};
+    if (stat(src_path, &st) < 0)
     {
-        perror("Error opening source file");
-        return false;
+        perror(src_path);
+        exit(1);
     }
 
-    FILE *dst = fopen(dst_path, "wb");
-    if (!dst)
+    char *data = (char *)malloc(st.st_size);
+    if (data == NULL)
     {
-        perror("Error opening destination file");
-        fclose(src);
-        return false;
+        perror("malloc");
+        exit(1);
     }
 
-    char buffer[8192];
-    size_t bytes_read;
-    bool success = true;
-
-    while ((bytes_read = fread(buffer, 1, sizeof(buffer), src)) > 0)
+    FILE *src_file = fopen(src_path, "rb");
+    if (src_file == NULL)
     {
-        if (fwrite(buffer, 1, bytes_read, dst) != bytes_read)
-        {
-            perror("Error writing to destination");
-            success = false;
-            break;
-        }
+        perror(src_path);
+        free(data);
+        exit(1);
     }
 
-    if (ferror(src))
+    FILE *dst_file = fopen(dst_path, "wb");
+    if (dst_file == NULL)
     {
-        perror("Error reading source file");
-        success = false;
+        perror(dst_path);
+        fclose(src_file);
+        free(data);
+        exit(1);
     }
 
-    fclose(src);
-    fclose(dst);
-    return success;
+    if (fread(data, 1, st.st_size, src_file) != (size_t)st.st_size)
+    {
+        perror(src_path);
+        fclose(src_file);
+        fclose(dst_file);
+        free(data);
+        exit(1);
+    }
+
+    if (fwrite(data, 1, st.st_size, dst_file) != (size_t)st.st_size)
+    {
+        perror(dst_path);
+        fclose(src_file);
+        fclose(dst_file);
+        free(data);
+        exit(1);
+    }
+
+    fclose(src_file);
+    fclose(dst_file);
+    free(data);
+
+    if (chmod(dst_path, 0777) < 0)
+    {
+        perror(dst_path);
+        exit(1);
+    }
 }
+
 
 void remodify_oracle(string &path_to_oracle, map<u64, u8> &breakpoint)
 {
@@ -416,7 +440,7 @@ int main(int argc, char **argv)
     __tracer_init_trace_bits();
     __tracer_init_virgin_bits();
     setup_bblist(bblist, path_to_bblock);
-    copy_binary_file(path_to_oracle.data(), new_path_to_oracle.data());
+    copy_binary(path_to_oracle.data(), new_path_to_oracle.data());
     modify_oracle(new_path_to_oracle, bblist, breakpoint);
 
     // Remaining args after options (e.g. target binary args)
@@ -424,7 +448,7 @@ int main(int argc, char **argv)
     bool first_stop = true;
     while (true)
     {
-        copy_binary_file(path_to_oracle.data(), new_path_to_oracle.data());
+        copy_binary(path_to_oracle.data(), new_path_to_oracle.data());
         remodify_oracle(new_path_to_oracle, breakpoint);
         first_stop = true;
         bool can_run = true;
