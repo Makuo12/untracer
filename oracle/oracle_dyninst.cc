@@ -102,9 +102,9 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
     }
     if (handle && !failed)
     {
-        ofstream blksListFile("./output/.bblist", std::ios::app);
-        blksListFile << std::hex << curBlkAddr << "," << std::dec << curBlkID << endl;
-        blksListFile.close();
+        FILE *blksListFile = fopen("./output/.bblist", "a");
+        fprintf(blksListFile, "%lu\n", curBlkAddr);
+        fclose(blksListFile);
     }
     /* Print some useful info, if requested. */
     if (verbose)
@@ -113,77 +113,128 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
     return 0;
 }
 
-void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex, unsigned long long moduleBase)
+void iterateBlocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex)
 {
+
+    /* Extract the function's name, and its pointer from the parent function vector. */
     BPatch_function *curFunc = *funcIter;
     char curFuncName[1024];
     curFunc->getName(curFuncName, 1024);
 
+    /* Extract the function's CFG. */
     BPatch_flowGraph *curFuncCFG = curFunc->getCFG();
     if (!curFuncCFG)
     {
         cerr << "Failed to find CFG for function " << curFuncName << endl;
         return;
     }
-
+    /* Extract the CFG's basic blocks and verify the number of blocks isn't 0. */
     BPatch_Set<BPatch_basicBlock *> curFuncBlks;
-    if (!curFuncCFG->getAllBasicBlocks(curFuncBlks) || curFuncBlks.size() == 0)
+    if (!curFuncCFG->getAllBasicBlocks(curFuncBlks))
+    {
+        cerr << "Failed to find basic blocks for function " << curFuncName << endl;
+        return;
+    }
+    if (curFuncBlks.size() == 0)
     {
         cerr << "No basic blocks for function " << curFuncName << endl;
         return;
     }
 
+    /* Set up this function's basic block iterator and start iterating. */
     BPatch_Set<BPatch_basicBlock *>::iterator blksIter;
+
     for (blksIter = curFuncBlks.begin(); blksIter != curFuncBlks.end(); blksIter++)
     {
-        BPatch_basicBlock *curBlkObj = *blksIter;
-        BPatch_point *curBlk = curBlkObj->findEntryPoint();
-        unsigned int curBlkSize = curBlkObj->size();
-        unsigned long curBlkAddr = curBlkObj->getStartAddress();
+
+        /* Get the current basic block, and its size and address. */
+        BPatch_point *curBlk = (*blksIter)->findEntryPoint();
+        unsigned int curBlkSize = (*blksIter)->size();
+        /* Compute the basic block's adjusted address.	*/
+        unsigned long curBlkAddr = (*blksIter)->getStartAddress();
+        /* Non-PIE binary address correction. */
         curBlkAddr = curBlkAddr - (long)0x400000;
 
+        unsigned int curBlkID = *blkIndex;
+
+        /* If using forkserver, instrument the first block in function <main> with the forkserver callback.
+         * Use the correct forkserver based on the existence of tracePath. */
+
+
+        /* We skip <main> if instrumenting forkserver. */
+        if (string(curFuncName) == string("main"))
+            continue;
+
+        /* Other basic blocks to ignore. */
+        if (string(curFuncName) == string("init") ||
+            string(curFuncName) == string("_init") ||
+            string(curFuncName) == string("fini") ||
+            string(curFuncName) == string("_fini") ||
+            string(curFuncName) == string("register_tm_clones") ||
+            string(curFuncName) == string("deregister_tm_clones") ||
+            string(curFuncName) == string("frame_dummy") ||
+            string(curFuncName) == string("__do_global_ctors_aux") ||
+            string(curFuncName) == string("__do_global_dtors_aux") ||
+            string(curFuncName) == string("__libc_csu_init") ||
+            string(curFuncName) == string("__libc_csu_fini") ||
+            string(curFuncName) == string("start") ||
+            string(curFuncName) == string("_start") ||
+            string(curFuncName) == string("__libc_start_main") ||
+            string(curFuncName) == string("__gmon_start__") ||
+            string(curFuncName) == string("__cxa_atexit") ||
+            string(curFuncName) == string("__cxa_finalize") ||
+            string(curFuncName) == string("__assert_fail") ||
+            string(curFuncName) == string("free") ||
+            string(curFuncName) == string("fnmatch") ||
+            string(curFuncName) == string("readlinkat") ||
+            string(curFuncName) == string("malloc") ||
+            string(curFuncName) == string("calloc") ||
+            string(curFuncName) == string("realloc") ||
+            string(curFuncName) == string("argp_failure") ||
+            string(curFuncName) == string("argp_help") ||
+            string(curFuncName) == string("argp_state_help") ||
+            string(curFuncName) == string("argp_error") ||
+            string(curFuncName) == string("argp_parse") ||
+            (string(curFuncName).substr(0, 4) == string("targ") && isdigit(string(curFuncName)[5])))
+        {
+            continue;
+        }
         string functionName(curFuncName);
         if (skipFunctions.count(functionName))
             continue;
         if ((strstr(functionName.data(), "__oracle")) != NULL)
             continue;
 
-        // Ask Dyninst for the actual instructions in this block
-        // and verify the first instruction's address matches curBlkAddr
-        std::vector<std::pair<Dyninst::InstructionAPI::Instruction, Dyninst::Address>> insns;
-        curBlkObj->getInstructions(insns);
-
-        if (insns.empty())
+        /* If the address is in the list of addresses to skip, skip it. */
+        if (skipAddresses.find(curBlkAddr) != skipAddresses.end())
         {
-            cerr << "[SKIP] No instructions in block at 0x" << std::hex << curBlkAddr << endl;
+            (*blkIndex)++;
             continue;
         }
 
-        // First instruction's address, also offset-adjusted
-        unsigned long firstInsnAddr = insns[0].second - (long)0x400000;
-
-        if (firstInsnAddr != curBlkAddr)
+        /* If we're not in forkserver-only mode, check the block's indx/size and skip if necessary. */
+        if (*blkIndex < numBlksToSkip || curBlkSize < minBlkSize)
         {
-            cerr << "[WARN] Block start 0x" << std::hex << curBlkAddr
-                 << " != first insn addr 0x" << firstInsnAddr
-                 << " in " << curFuncName << " — skipping" << endl;
+            (*blkIndex)++;
             continue;
         }
 
-        // Also print the first instruction mnemonic and size for sanity
-        Dyninst::InstructionAPI::Instruction &firstInsn = insns[0].first;
-        if (verbose)
+        /* If path to output analyzed bb addrs list set, save the addresses of each basic block visited. */
+        if (analyzedBBListPath)
         {
-            // cout << "[BB] 0x" << std::hex << curBlkAddr
-            //      << " first_insn=" << firstInsn.format()
-            //      << " size=" << std::dec << firstInsn.size()
-            //      << " in " << curFuncName << endl;
+            FILE *blksListFile = fopen(analyzedBBListPath, "a");
+            fprintf(blksListFile, "%lu\n", curBlkAddr);
+            fclose(blksListFile);
         }
-
         insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, *blkIndex);
+
         (*blkIndex)++;
+        continue;
     }
+
+    return;
 }
+
 
 int main(int argc, char **argv) {
     initSkipLibraries();
@@ -238,7 +289,7 @@ int main(int argc, char **argv) {
         for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
         {
             /* Go through each function's basic blocks and insert callbacks accordingly. */
-            iterate_blocks(app, funcIter, &blkIndex, moduleBase);
+            iterateBlocks(app, funcIter, &blkIndex, moduleBase);
         }
     }
     /* If specified, save the instrumented binary and verify success. */
