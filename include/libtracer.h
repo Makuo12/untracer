@@ -9,6 +9,7 @@
 extern "C" {
     int __real_main(int, char **);
     void __tracer_init_trace_bits(void);
+    void __tracer_init_trace_blocks(void);
 }
 
 #endif

@@ -9,30 +9,29 @@
 #include "dyninst_handle.h"
 
 using std::cerr;
+using std::cin;
 using std::cout;
 using std::endl;
-using std::cin;
-using std::vector;
-using std::string;
-using std::set;
 using std::ifstream;
 using std::ofstream;
+using std::set;
+using std::string;
+using std::vector;
 
 set<string> skipLibraries;
 
-BPatch_function * oracle_block_hit;
-BPatch_function * restore_rdi;
-BPatch_function * save_rdi;
+BPatch_function *oracle_block_hit;
+BPatch_function *restore_rdi;
+BPatch_function *save_rdi;
 
 bool dynfix = true;
 
 using namespace Dyninst;
 BPatch bpatch;
 
-bool verbose = true;
+bool verbose = false;
 
-const char * oracle_library = "./libs/liboracle.so";
-
+const char *oracle_library = "./libs/liboracle.so";
 
 void initSkipLibraries()
 {
@@ -51,7 +50,6 @@ void initSkipLibraries()
     return;
 }
 
-
 BPatch_function *findFuncByName(BPatch_image *appImage, char *curFuncName)
 {
     BPatch_Vector<BPatch_function *> funcs;
@@ -66,7 +64,6 @@ BPatch_function *findFuncByName(BPatch_image *appImage, char *curFuncName)
 
 int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *curBlk, unsigned long curBlkAddr, unsigned int curBlkSize, unsigned int curBlkID)
 {
-
     /* Verify curBlk is instrumentable. */
     if (curBlk == NULL)
     {
@@ -89,7 +86,8 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
         handle = appBin->insertSnippet(instExprSaveRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
     /* Instruments the basic block. */
     handle = appBin->insertSnippet(instExproracle, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-    if (!handle) {
+    if (!handle)
+    {
         failed = true;
     }
     /* Wrap up RDI fix handling. */
@@ -102,9 +100,10 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
     }
     if (handle && !failed)
     {
-        FILE *blksListFile = fopen("./output/.bblist", "a");
-        fprintf(blksListFile, "%lu\n", curBlkAddr);
-        fclose(blksListFile);
+        /* If path to output instrumented bb addrs list set, save the addresses of each basic block instrumented to that file. */
+        ofstream blksListFile("./output/.bblist", std::ios::app);
+        blksListFile << std::hex << curBlkAddr << "," << std::dec << curBlkID << endl;
+        blksListFile.close();
     }
     /* Print some useful info, if requested. */
     if (verbose)
@@ -113,14 +112,13 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
     return 0;
 }
 
-void iterateBlocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex)
+void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex, unsigned long long moduleBase)
 {
 
     /* Extract the function's name, and its pointer from the parent function vector. */
     BPatch_function *curFunc = *funcIter;
     char curFuncName[1024];
     curFunc->getName(curFuncName, 1024);
-
     /* Extract the function's CFG. */
     BPatch_flowGraph *curFuncCFG = curFunc->getCFG();
     if (!curFuncCFG)
@@ -140,103 +138,47 @@ void iterateBlocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterato
         cerr << "No basic blocks for function " << curFuncName << endl;
         return;
     }
-
     /* Set up this function's basic block iterator and start iterating. */
     BPatch_Set<BPatch_basicBlock *>::iterator blksIter;
-
     for (blksIter = curFuncBlks.begin(); blksIter != curFuncBlks.end(); blksIter++)
     {
-
         /* Get the current basic block, and its size and address. */
         BPatch_point *curBlk = (*blksIter)->findEntryPoint();
         unsigned int curBlkSize = (*blksIter)->size();
         /* Compute the basic block's adjusted address.	*/
         unsigned long curBlkAddr = (*blksIter)->getStartAddress();
         /* Non-PIE binary address correction. */
+        // curBlkAddr = curBlkAddr - moduleBase;
         curBlkAddr = curBlkAddr - (long)0x400000;
-
         unsigned int curBlkID = *blkIndex;
-
-        /* If using forkserver, instrument the first block in function <main> with the forkserver callback.
-         * Use the correct forkserver based on the existence of tracePath. */
-
-
-        /* We skip <main> if instrumenting forkserver. */
-        if (string(curFuncName) == string("main"))
-            continue;
-
         /* Other basic blocks to ignore. */
-        if (string(curFuncName) == string("init") ||
-            string(curFuncName) == string("_init") ||
-            string(curFuncName) == string("fini") ||
-            string(curFuncName) == string("_fini") ||
-            string(curFuncName) == string("register_tm_clones") ||
-            string(curFuncName) == string("deregister_tm_clones") ||
-            string(curFuncName) == string("frame_dummy") ||
-            string(curFuncName) == string("__do_global_ctors_aux") ||
-            string(curFuncName) == string("__do_global_dtors_aux") ||
-            string(curFuncName) == string("__libc_csu_init") ||
-            string(curFuncName) == string("__libc_csu_fini") ||
-            string(curFuncName) == string("start") ||
-            string(curFuncName) == string("_start") ||
-            string(curFuncName) == string("__libc_start_main") ||
-            string(curFuncName) == string("__gmon_start__") ||
-            string(curFuncName) == string("__cxa_atexit") ||
-            string(curFuncName) == string("__cxa_finalize") ||
-            string(curFuncName) == string("__assert_fail") ||
-            string(curFuncName) == string("free") ||
-            string(curFuncName) == string("fnmatch") ||
-            string(curFuncName) == string("readlinkat") ||
-            string(curFuncName) == string("malloc") ||
-            string(curFuncName) == string("calloc") ||
-            string(curFuncName) == string("realloc") ||
-            string(curFuncName) == string("argp_failure") ||
-            string(curFuncName) == string("argp_help") ||
-            string(curFuncName) == string("argp_state_help") ||
-            string(curFuncName) == string("argp_error") ||
-            string(curFuncName) == string("argp_parse") ||
-            (string(curFuncName).substr(0, 4) == string("targ") && isdigit(string(curFuncName)[5])))
-        {
-            continue;
-        }
         string functionName(curFuncName);
         if (skipFunctions.count(functionName))
             continue;
-        if ((strstr(functionName.data(), "__oracle")) != NULL)
+        // Catches __tracer_* variants not explicitly listed
+        if (strstr(functionName.data(), "__tracer") != NULL)
             continue;
-
-        /* If the address is in the list of addresses to skip, skip it. */
-        if (skipAddresses.find(curBlkAddr) != skipAddresses.end())
+        if (strstr(functionName.data(), "__oracle") != NULL)
+            continue;
+        if (strstr(functionName.data(), "__fsrvonly") != NULL)
+            continue;
+        // Catches targ[digit] synthetic Dyninst functions
+        if (functionName.substr(0, 4) == "targ" && isdigit(functionName[4]))
+            continue;
+        if (curBlkSize < minBlkSize)
         {
             (*blkIndex)++;
             continue;
         }
-
-        /* If we're not in forkserver-only mode, check the block's indx/size and skip if necessary. */
-        if (*blkIndex < numBlksToSkip || curBlkSize < minBlkSize)
-        {
-            (*blkIndex)++;
-            continue;
-        }
-
-        /* If path to output analyzed bb addrs list set, save the addresses of each basic block visited. */
-        if (analyzedBBListPath)
-        {
-            FILE *blksListFile = fopen(analyzedBBListPath, "a");
-            fprintf(blksListFile, "%lu\n", curBlkAddr);
-            fclose(blksListFile);
-        }
-        insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, *blkIndex);
-
+        insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
         (*blkIndex)++;
         continue;
     }
-
     return;
 }
 
-
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     initSkipLibraries();
     bpatch.setDelayedParsing(true);
     bpatch.setLivenessAnalysis(false);
@@ -250,14 +192,16 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
     BPatch_image *appImage = app->getImage();
-    if (!app->loadLibrary(oracle_library)) {
+    if (!app->loadLibrary(oracle_library))
+    {
         cerr << "Failed to load binary" << endl;
         return EXIT_FAILURE;
     }
     save_rdi = findFuncByName(appImage, (char *)"__oracle_save_rdi");
     restore_rdi = findFuncByName(appImage, (char *)"__oracle_restore_rdi");
     oracle_block_hit = findFuncByName(appImage, (char *)"__oracle_trap_hit");
-    if (save_rdi == NULL || restore_rdi == NULL || oracle_block_hit == NULL) {
+    if (save_rdi == NULL || restore_rdi == NULL || oracle_block_hit == NULL)
+    {
         cerr << "Failed to find important functions" << endl;
         return EXIT_FAILURE;
     }
@@ -289,7 +233,7 @@ int main(int argc, char **argv) {
         for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
         {
             /* Go through each function's basic blocks and insert callbacks accordingly. */
-            iterateBlocks(app, funcIter, &blkIndex, moduleBase);
+            iterate_blocks(app, funcIter, &blkIndex, moduleBase);
         }
     }
     /* If specified, save the instrumented binary and verify success. */

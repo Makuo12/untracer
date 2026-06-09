@@ -91,20 +91,30 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     BPatch_funcCallExpr instExprTrace(*trace_block_hit, instArgs);
     BPatchSnippetHandle *handle;
 
+    bool failed = false;
     /* RDI fix handling. */
     if (dynfix)
         handle = appBin->insertSnippet(instExprSaveRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-
     /* Instruments the basic block. */
-    handle = appBin->insertSnippet(instExprTrace, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-
+    handle = appBin->insertSnippet(instExproracle, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
+    if (!handle)
+    {
+        failed = true;
+    }
     /* Wrap up RDI fix handling. */
     if (dynfix)
         handle = appBin->insertSnippet(instExprRestRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
     /* Verify instrumenting worked. If all good, advance blkIndex and return. */
     if (!handle)
     {
-        cerr << "Failed to insert trace callback at 0x" << std::hex << curBlkAddr << std::endl;
+        cerr << "Failed to insert oracle callback at 0x" << std::hex << curBlkAddr << std::endl;
+    }
+    if (handle && !failed)
+    {
+        /* If path to output instrumented bb addrs list set, save the addresses of each basic block instrumented to that file. */
+        ofstream blksListFile("./output/.bblist", std::ios::app);
+        blksListFile << std::hex << curBlkAddr << "," << std::dec << curBlkID << endl;
+        blksListFile.close();
     }
 
     /* Print some useful info, if requested. */
@@ -114,50 +124,69 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     return 0;
 }
 
-void iterate_blocks(BPatch_binaryEdit *appBin, vector < BPatch_function * >::iterator funcIter, int *blkIndex) {
+void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex, unsigned long long moduleBase)
+{
 
-	/* Extract the function's name, and its pointer from the parent function vector. */
-	BPatch_function *curFunc = *funcIter;
-	char curFuncName[1024];
-	curFunc->getName(curFuncName, 1024); 
-	/* Extract the function's CFG. */
-	BPatch_flowGraph *curFuncCFG = curFunc->getCFG();
-	if (!curFuncCFG) {
-		cerr << "Failed to find CFG for function " << curFuncName << endl;
-		return;
-	}
-	/* Extract the CFG's basic blocks and verify the number of blocks isn't 0. */
-	BPatch_Set < BPatch_basicBlock * >curFuncBlks;
-	if (!curFuncCFG->getAllBasicBlocks(curFuncBlks)) {
-		cerr << "Failed to find basic blocks for function " << curFuncName << endl;
-		return;
-	} 
-	if (curFuncBlks.size() == 0) {
-		cerr << "No basic blocks for function " << curFuncName << endl;
-		return;
-	}
-	/* Set up this function's basic block iterator and start iterating. */
-	BPatch_Set < BPatch_basicBlock * >::iterator blksIter;
-	for (blksIter = curFuncBlks.begin(); blksIter != curFuncBlks.end(); blksIter++) {
-		/* Get the current basic block, and its size and address. */
-		BPatch_point *curBlk = (*blksIter)->findEntryPoint();
-		unsigned int curBlkSize = (*blksIter)->size();	 
-		/* Compute the basic block's adjusted address.	*/
-		unsigned long curBlkAddr = (*blksIter)->getStartAddress();
-		/* Non-PIE binary address correction. */ 
-		curBlkAddr = curBlkAddr - (long) 0x400000;
-		unsigned int curBlkID = *blkIndex;
-		/* Other basic blocks to ignore. */
+    /* Extract the function's name, and its pointer from the parent function vector. */
+    BPatch_function *curFunc = *funcIter;
+    char curFuncName[1024];
+    curFunc->getName(curFuncName, 1024);
+    /* Extract the function's CFG. */
+    BPatch_flowGraph *curFuncCFG = curFunc->getCFG();
+    if (!curFuncCFG)
+    {
+        cerr << "Failed to find CFG for function " << curFuncName << endl;
+        return;
+    }
+    /* Extract the CFG's basic blocks and verify the number of blocks isn't 0. */
+    BPatch_Set<BPatch_basicBlock *> curFuncBlks;
+    if (!curFuncCFG->getAllBasicBlocks(curFuncBlks))
+    {
+        cerr << "Failed to find basic blocks for function " << curFuncName << endl;
+        return;
+    }
+    if (curFuncBlks.size() == 0)
+    {
+        cerr << "No basic blocks for function " << curFuncName << endl;
+        return;
+    }
+    /* Set up this function's basic block iterator and start iterating. */
+    BPatch_Set<BPatch_basicBlock *>::iterator blksIter;
+    for (blksIter = curFuncBlks.begin(); blksIter != curFuncBlks.end(); blksIter++)
+    {
+        /* Get the current basic block, and its size and address. */
+        BPatch_point *curBlk = (*blksIter)->findEntryPoint();
+        unsigned int curBlkSize = (*blksIter)->size();
+        /* Compute the basic block's adjusted address.	*/
+        unsigned long curBlkAddr = (*blksIter)->getStartAddress();
+        /* Non-PIE binary address correction. */
+        // curBlkAddr = curBlkAddr - moduleBase;
+        curBlkAddr = curBlkAddr - (long)0x400000;
+        unsigned int curBlkID = *blkIndex;
+        /* Other basic blocks to ignore. */
         string functionName(curFuncName);
         if (skipFunctions.count(functionName))
             continue;
-        if ((strstr(functionName.data(), "__tracer")) != NULL)
+        // Catches __tracer_* variants not explicitly listed
+        if (strstr(functionName.data(), "__tracer") != NULL)
             continue;
-        insert_trace(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
-		(*blkIndex)++;
-		continue;
-	}
-	return;
+        if (strstr(functionName.data(), "__oracle") != NULL)
+            continue;
+        if (strstr(functionName.data(), "__fsrvonly") != NULL)
+            continue;
+        // Catches targ[digit] synthetic Dyninst functions
+        if (functionName.substr(0, 4) == "targ" && isdigit(functionName[4]))
+            continue;
+        if (curBlkSize < minBlkSize)
+        {
+            (*blkIndex)++;
+            continue;
+        }
+        insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
+        (*blkIndex)++;
+        continue;
+    }
+    return;
 }
 
 int main(int argc, char **argv) {

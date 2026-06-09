@@ -93,7 +93,7 @@ def create_arguments():
     os.environ[IN_DIR_ENV] = in_dir
     os.environ[OUT_DIR_ENV] = out_dir
     os.environ[SHM_KEY_FILE_NAME] = shm_key_file
-    os.environ[INPUT_FILE_ENV] = input_file
+    os.environ[INPUT_FILE_ENV] = "./pdf_test/sample-animals.pdf"
     return input_file
 
 def create_elf(compiler, target_name):

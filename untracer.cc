@@ -49,6 +49,9 @@ int total_coverage_found = 0;
 u8 * trace_bits;
 static int __trace_shm_id = -1;
 
+u8 * trace_blocks;
+static int __trace_block_shm_id = -1;
+
 u8 __trace_virgin_bits[MAP_SIZE];
 u16 __trace_class_lookup16[MAP_SIZE];
 
@@ -64,6 +67,36 @@ void __tracer_cleanup_trace_bits(void) {
     if (__trace_shm_id >= 0) {
         shmctl(__trace_shm_id, IPC_RMID, NULL);
         __trace_shm_id = -1;
+    }
+    if (__trace_block_shm_id >= 0) {
+        shmctl(__trace_block_shm_id, IPC_RMID, NULL);
+        __trace_block_shm_id = -1;
+    }
+}
+void __tracer_init_trace_blocks(void) {
+    // string key_name(getenv(SHM_KEY_FILE_NAME) ? getenv(SHM_KEY_FILE_NAME) : "");
+    // if (key_name.size() == 0) {
+    //     FATAL({"Environment variable", SHM_KEY_FILE_NAME, "is not set"});
+    // }
+    // key_t key = ftok(key_name.c_str(), PROJECT_NAME);
+    // if (key == -1) {
+    //     FATAL({"ftok failed to generate key", key_name});
+    // }
+    int shm_id = shmget(IPC_PRIVATE, BLOCK_SIZE, IPC_CREAT | IPC_EXCL | 0666);
+    if (shm_id < 0) {
+        FATAL({"key failed to get shm_id", std::to_string(0)});
+    }
+    __trace_block_shm_id = shm_id;
+    if (atexit(__tracer_cleanup_trace_bits) != 0) {
+        shmctl(shm_id, IPC_RMID, NULL);
+        FATAL("Failed to register shared memory cleanup");
+    }
+    string shm_str = std::to_string(shm_id);
+    setenv(SHM_ID_ENV_BLOCKS, shm_str.c_str(), 1);
+    trace_blocks = (u8 *)shmat(shm_id, 0, 0);
+    if (trace_blocks == (u8 *)-1) {
+        shmctl(shm_id, IPC_RMID, NULL);
+        FATAL({"failed to link trace_blocks to memory", std::to_string(shm_id)});
     }
 }
 
@@ -328,11 +361,16 @@ std::string generateRandomFilename(const std::string& extension = ".txt") {
 
 void getHitBlocks(unordered_set<int> &hits)
 {
-    for (int i = 0; i < MAP_SIZE; i++)
+    for (int i = 0; i < BLOCK_SIZE; i++)
     {
-        if (trace_bits[i] != 0)
+        if (trace_blocks[i] != 0)
             hits.insert(i);
     }
+    if (hits.size() > 0) {
+        cout << "on block" << hits.size() << endl;
+    }
+
+
 }
 
 void trace(const string &path_to_oracle, const string &path_to_trace, const string &path_to_input, 
@@ -461,6 +499,7 @@ int main(int argc, char **argv)
     }
     __tracer_init_class_lookup16();
     __tracer_init_trace_bits();
+    __tracer_init_trace_blocks();
     __tracer_init_virgin_bits();
     setup_bblist(bblist, path_to_bblock);
     copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
