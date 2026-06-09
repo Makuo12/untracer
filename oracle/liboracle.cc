@@ -110,19 +110,20 @@ void __oracle_write_testcase(u8 * mem, Entry * entry, const char *input_file) {
 }
 
 
-void __oracle_init_shm(void) {
-    int shm_id = shmget(IPC_PRIVATE, sizeof(*trap_block_ids), IPC_CREAT | IPC_EXCL | 0600);
-    if (shm_id < 0) {
-        FATAL({"Failed to create shared memory"}); 
-    }
-    string shm_id_str = std::to_string(shm_id);
-    setenv(SHM_TRAP_BLOCK_IDS_ENV, shm_id_str.c_str(), 1);
-    trap_block_ids = (u64 *)shmat(shm_id, NULL, 0);
-    if (trap_block_ids == (u64 *)-1) {
-        shmctl(shm_id, IPC_RMID, NULL);
-        FATAL({"Failed to link trap_block_ids to memory"});
-    }
-}
+// void __oracle_init_shm(void) {
+//     int shm_id = shmget(IPC_PRIVATE, sizeof(*trap_block_ids), IPC_CREAT | IPC_EXCL | 0600);
+//     if (shm_id < 0) {
+//         FATAL({"Failed to create shared memory"}); 
+//     }
+//     string shm_id_str = std::to_string(shm_id);
+//     setenv(SHM_TRAP_BLOCK_IDS_ENV, shm_id_str.c_str(), 1);
+//     trap_block_ids = (u64 *)shmat(shm_id, NULL, 0);
+//     if (trap_block_ids == (u64 *)-1) {
+//         shmctl(shm_id, IPC_RMID, NULL);
+//         FATAL({"Failed to link trap_block_ids to memory"});
+//     }
+//     FATAL_C("Setup memory");
+// }
 void __oracle_save_rdi()
 {
     savedDi = rdi;
@@ -144,9 +145,6 @@ void __oracle_restore_rdi()
 }
 
 void __oracle_trap_hit(int blkId) {
-    *trap_block_ids = (u64)blkId;
-    MEM_BARRIER();
-    __asm__ volatile("int3");
 }
 #ifdef __cplusplus
 }

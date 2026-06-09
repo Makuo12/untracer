@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
+#include <unordered_set>
 #include <iterator>
 #include <random>
 #include <sstream>
@@ -35,6 +36,7 @@ using std::fstream;
 using std::iterator;
 using std::ifstream;
 using std::ofstream;
+using std::unordered_set;
 using std::map;
 using std::cout;
 using std::cerr;
@@ -46,6 +48,9 @@ int total_coverage_found = 0;
 
 u8 * trace_bits;
 static int __trace_shm_id = -1;
+
+u8 * trace_blocks;
+static int __trace_block_shm_id = -1;
 
 u8 __trace_virgin_bits[MAP_SIZE];
 u16 __trace_class_lookup16[MAP_SIZE];
@@ -62,6 +67,36 @@ void __tracer_cleanup_trace_bits(void) {
     if (__trace_shm_id >= 0) {
         shmctl(__trace_shm_id, IPC_RMID, NULL);
         __trace_shm_id = -1;
+    }
+    if (__trace_block_shm_id >= 0) {
+        shmctl(__trace_block_shm_id, IPC_RMID, NULL);
+        __trace_block_shm_id = -1;
+    }
+}
+void __tracer_init_trace_blocks(void) {
+    // string key_name(getenv(SHM_KEY_FILE_NAME) ? getenv(SHM_KEY_FILE_NAME) : "");
+    // if (key_name.size() == 0) {
+    //     FATAL({"Environment variable", SHM_KEY_FILE_NAME, "is not set"});
+    // }
+    // key_t key = ftok(key_name.c_str(), PROJECT_NAME);
+    // if (key == -1) {
+    //     FATAL({"ftok failed to generate key", key_name});
+    // }
+    int shm_id = shmget(IPC_PRIVATE, BLOCK_SIZE, IPC_CREAT | IPC_EXCL | 0666);
+    if (shm_id < 0) {
+        FATAL({"key failed to get shm_id", std::to_string(0)});
+    }
+    __trace_block_shm_id = shm_id;
+    if (atexit(__tracer_cleanup_trace_bits) != 0) {
+        shmctl(shm_id, IPC_RMID, NULL);
+        FATAL("Failed to register shared memory cleanup");
+    }
+    string shm_str = std::to_string(shm_id);
+    setenv(SHM_ID_ENV_BLOCKS, shm_str.c_str(), 1);
+    trace_blocks = (u8 *)shmat(shm_id, 0, 0);
+    if (trace_blocks == (u8 *)-1) {
+        shmctl(shm_id, IPC_RMID, NULL);
+        FATAL({"failed to link trace_blocks to memory", std::to_string(shm_id)});
     }
 }
 
@@ -222,27 +257,41 @@ void remodify_oracle(string &path_to_oracle, map<u64, u8> &breakpoint)
 {
     char flag[1] = {(char)0xCC};
     fstream oracle_file(path_to_oracle, std::ios::in | std::ios::out | std::ios::binary); // add binary mode
+    if (!oracle_file.is_open()) {
+        FATAL_C("failed to open");
+    }
     for (auto begin = breakpoint.begin(); begin != breakpoint.end(); ++begin) {
         oracle_file.seekp(begin->first, std::ios::beg); // seekp for writing
         oracle_file.write(flag, 1);
     }
     oracle_file.close();
 }
-void modify_oracle(string &path_to_oracle, vector<u64> &list, map<u64, u8> &breakpoint)
+void modify_oracle(string &path_to_oracle, vector<u64> &list, map<u64, u8> &breakpoint, unordered_set<int> &hits)
 {
     u64 addr;
     char flag[1] = {(char)0xCC};
     int offset = 0;
+<<<<<<< HEAD
     fstream oracle_file(path_to_oracle, std::ios::in | std::ios::out | std::ios::binary); // add binary mode
+    if (!oracle_file.is_open()) {
+        FATAL_C("failed to open");
+    }
+=======
+    fstream oracle_file(path_to_oracle, std::ios::in | std::ios::out | std::ios::binary);
+>>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
     for (decltype(list.size()) i = 0; i < list.size(); i++)
     {
+        // Skip indexes that were already hit
+        if (hits.count(i) > 0)
+            continue;
+
         addr = list[i] + offset;
         if (addr != 0)
         {
             char original;
             oracle_file.seekg(addr, std::ios::beg);
             oracle_file.read(&original, 1);
-            oracle_file.seekp(addr, std::ios::beg); // seekp for writing
+            oracle_file.seekp(addr, std::ios::beg);
             breakpoint[addr] = original;
             oracle_file.write(flag, 1);
         }
@@ -295,8 +344,7 @@ void setup_bblist(vector<u64> &list, const string &path_to_bblock)
     string buf;
     while ((getline(file, buf)))
     {
-        char *c = std::strtok((char *)buf.c_str(), ",");
-        long long addr = std::strtoll(c, nullptr, 16);
+        long long addr = std::strtoll(buf.c_str(), nullptr, 16);
         list.emplace_back(addr);
     }
     file.close();
@@ -320,7 +368,22 @@ std::string generateRandomFilename(const std::string& extension = ".txt") {
     return filename;
 }
 
-void trace(const string &path_to_oracle, const string &path_to_trace, const string &path_to_input, string &in_dir, string &out_dir)
+void getHitBlocks(unordered_set<int> &hits)
+{
+    for (int i = 0; i < BLOCK_SIZE; i++)
+    {
+        if (trace_blocks[i] != 0)
+            hits.insert(i);
+    }
+    if (hits.size() > 0) {
+        cout << "on block" << hits.size() << endl;
+    }
+
+
+}
+
+void trace(const string &path_to_oracle, const string &path_to_trace, const string &path_to_input, 
+    string &in_dir, string &out_dir, unordered_set<int> &index_found)
 {
     cout << "on trace" << endl;
     memset(trace_bits, 0, MAP_SIZE);
@@ -341,6 +404,8 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
         // Parent — wait for child to finish
         int status;
         waitpid(pid, &status, 0);
+        MEM_BARRIER();
+        getHitBlocks(index_found);
 
         // Copy input file to in_dir
         auto saveInputFile = [&]()
@@ -360,26 +425,26 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
             }
         };
 
-        if (WIFEXITED(status))
-        {
-            __tracer_classify_counts((u64 *)trace_bits);
-            bool found = __tracer_has_bit();
-            if (found)
-            {
-                saveInputFile();
-            }
-            waitpid(pid, NULL, 0); // reap the child fully
-        }
-        else if (WIFSIGNALED(status))
-        {
-            __tracer_classify_counts((u64 *)trace_bits);
-            bool found = __tracer_has_bit();
-            if (found)
-            {
-                saveInputFile();
-            }
-            waitpid(pid, NULL, 0); // reap the child fully
-        }
+        // if (WIFEXITED(status))
+        // {
+        //     __tracer_classify_counts((u64 *)trace_bits);
+        //     bool found = __tracer_has_bit();
+        //     if (found)
+        //     {
+        //         saveInputFile();
+        //     }
+        //     waitpid(pid, NULL, 0); // reap the child fully
+        // }
+        // else if (WIFSIGNALED(status))
+        // {
+        //     __tracer_classify_counts((u64 *)trace_bits);
+        //     bool found = __tracer_has_bit();
+        //     if (found)
+        //     {
+        //         saveInputFile();
+        //     }
+        //     waitpid(pid, NULL, 0); // reap the child fully
+        // }
     }
     else
     {
@@ -407,6 +472,7 @@ int main(int argc, char **argv)
     vector<u64> bblist;
     map<u64, u8> breakpoint;
     map<u64, u8> breakpoint_remove;
+    unordered_set<int> indexes_found;
     string path_to_oracle;
     string path_to_trace;
     string path_to_bblock;
@@ -415,6 +481,7 @@ int main(int argc, char **argv)
     string in_dir(getenv(IN_DIR_ENV) ? getenv(IN_DIR_ENV) : "pdf_test");
     string out_dir(getenv(OUT_DIR_ENV) ? getenv(OUT_DIR_ENV) : "output");
     string new_path_to_oracle("./output/oracle.elf");
+    string new_path_to_oracle_two("./output/oracle_three.elf");
     while ((opt = getopt(argc, argv, "o:t:b:")) != -1)
     {
         switch (opt)
@@ -442,31 +509,55 @@ int main(int argc, char **argv)
     }
     __tracer_init_class_lookup16();
     __tracer_init_trace_bits();
+    __tracer_init_trace_blocks();
     __tracer_init_virgin_bits();
     setup_bblist(bblist, path_to_bblock);
+<<<<<<< HEAD
+    bool on_one = false;
     copy_binary(path_to_oracle.data(), new_path_to_oracle.data());
     modify_oracle(new_path_to_oracle, bblist, breakpoint);
+    char *args[] = {(char *)new_path_to_oracle.c_str(), "./pdf_test/3-reledpar_mwe.pdf", NULL};
+=======
+    copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
+    modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
 
+>>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
     // Remaining args after options (e.g. target binary args)
-    char *args[] = {(char *)new_path_to_oracle.c_str(), (char *)path_to_input.c_str(), NULL};
     bool first_stop = true;
     while (true)
     {
-        copy_binary(path_to_oracle.data(), new_path_to_oracle.data());
-        remodify_oracle(new_path_to_oracle, breakpoint);
+<<<<<<< HEAD
+        if (on_one) {
+            copy_binary(path_to_oracle.data(), new_path_to_oracle_two.data());
+            remodify_oracle(new_path_to_oracle_two, breakpoint);
+            // modify_oracle(new_path_to_oracle_two, bblist, breakpoint);
+            args[0] = "./output/oracle_three.elf";
+            on_one = false;
+        } else {
+            copy_binary(path_to_oracle.data(), new_path_to_oracle.data());
+            remodify_oracle(new_path_to_oracle, breakpoint);
+            // modify_oracle(new_path_to_oracle, bblist, breakpoint);
+            args[0] = "./output/oracle.elf";
+            on_one = true;
+        }
+=======
+        copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
+        modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
+>>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
         first_stop = true;
         bool can_run = true;
         pid_t pid = fork();
         if (pid == 0)
         {
             // Child
-            ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+            // ptrace(PTRACE_TRACEME, 0, NULL, NULL);
             execvp(args[0], args);
-            exit(1);
         }
         int status;
-        while (can_run)
+        waitpid(pid, &status, 0);
+        if (WIFSIGNALED(status))
         {
+<<<<<<< HEAD
             waitpid(pid, &status, 0);
             // 1. Normal Termination
             if (WIFEXITED(status))
@@ -493,10 +584,41 @@ int main(int argc, char **argv)
                 int sig = WSTOPSIG(status);
                 if (sig == SIGSEGV || sig == SIGILL || sig == SIGBUS || sig == SIGABRT)
                 {
+                    siginfo_t si;
+                    ptrace(PTRACE_GETSIGINFO, pid, NULL, &si);
+
+                    struct user_regs_struct regs;
+                    ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+
+                    // find which mapping RIP belongs to
+                    char maps_path[64];
+                    snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
+                    FILE *f = fopen(maps_path, "r");
+                    char line[512];
+                    printf("[CRASH] --- memory maps ---\n");
+                    while (fgets(line, sizeof(line), f))
+                    {
+                        unsigned long start, end;
+                        sscanf(line, "%lx-%lx", &start, &end);
+                        if (regs.rip >= start && regs.rip <= end)
+                            printf("[CRASH] RIP in >>> %s", line); // highlight the one
+                        else if (strstr(line, "oracle") || strstr(line, "pdftotext") || strstr(line, "libtracer"))
+                            printf("[CRASH] relevant: %s", line); // show your libs too
+                    }
+                    fclose(f);
+
+                    printf("[CRASH] signal        : %d\n", sig);
+                    printf("[CRASH] faulting addr : %p\n", si.si_addr);
+                    printf("[CRASH] si_code       : %d (%s)\n", si.si_code,
+                           si.si_code == SEGV_MAPERR ? "SEGV_MAPERR" : si.si_code == SEGV_ACCERR ? "SEGV_ACCERR"
+                                                                                                 : "OTHER");
+                    printf("[CRASH] RIP           : 0x%llx\n", regs.rip);
+                    printf("[CRASH] RSP           : 0x%llx\n", regs.rsp);
+                    printf("[CRASH] RAX           : 0x%llx\n", regs.rax);
+
                     can_run = false;
-                    printf("Child killed abruptly by signal %d\n", sig);
                     ptrace(PTRACE_KILL, pid, NULL, NULL);
-                    waitpid(pid, NULL, 0); // reap the child fully
+                    waitpid(pid, NULL, 0);
                     break;
                 } else if (sig == SIGTRAP)
                 {
@@ -506,7 +628,7 @@ int main(int argc, char **argv)
                         ptrace(PTRACE_CONT, pid, NULL, 0);
                         continue;
                     }
-                    trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir);
+                    // trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir);
                     struct user_regs_struct regs;
                     ptrace(PTRACE_GETREGS, pid, NULL, &regs);
 
@@ -555,8 +677,98 @@ int main(int argc, char **argv)
                     continue;
                 }
                 ptrace(PTRACE_CONT, pid, NULL, sig == SIGTRAP ? 0 : sig);
+=======
+            int term_sig = WTERMSIG(status);
+            if (term_sig == SIGTRAP) {
+                trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir, indexes_found);
+>>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
             }
+            printf("Child killed abruptly by signal %d\n", term_sig);
+            can_run = false;
+            // already dead if WIFSIGNALED, just reap any remaining state
+            // waitpid(pid, NULL, WNOHANG);
+            break;
         }
+        // // 1. Normal Termination
+        // if (WIFEXITED(status))
+        // {
+        //     SAY("Child exited normally");
+        //     waitpid(pid, NULL, WNOHANG);
+        //     can_run = false;
+        //     break;
+        // }
+
+        // // 2. Killed by an unhandled signal (Abrupt Crash)
+
+        // if (WIFSTOPPED(status))
+        // {
+        //     int sig = WSTOPSIG(status);
+        //     if (sig == SIGSEGV || sig == SIGILL || sig == SIGBUS || sig == SIGABRT)
+        //     {
+        //         can_run = false;
+        //         printf("Child killed abruptly by signal %d\n", sig);
+        //         // ptrace(PTRACE_KILL, pid, NULL, NULL);
+        //         waitpid(pid, NULL, 0); // reap the child fully
+        //         break;
+        //     }
+        //     else if (sig == SIGTRAP)
+        //     {
+        //         if (first_stop)
+        //         {
+        //             first_stop = false;
+        //             // ptrace(PTRACE_CONT, pid, NULL, 0);
+        //             continue;
+        //         }
+        //         trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir);
+        //         struct user_regs_struct regs;
+        //         ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+
+        //         // This will print 40147b the FIRST time
+        //         // And it will print 401171 (your breakpoint) the SECOND time
+        //         u64 vaddr = regs.rip - 1;
+        //         u64 file_off = vaddr - 0x400000;
+        //         printf("Child stopped at RIP: %lld\n", file_off);
+        //         auto found = breakpoint.find(file_off);
+
+        //         if (found != breakpoint.end())
+        //         {
+        //             printf("[BP RESTORE] vaddr=0x%lx | original_byte=0x%02x\n",
+        //                    (unsigned long)vaddr, (u8)found->second);
+
+        //             u64 data = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
+        //             printf("[BP RESTORE] word_before=0x%016lx | low_byte=0x%02x\n",
+        //                    (unsigned long)data, (u8)data);
+
+        //             u64 restored = (data & ~0xFFULL) | (u8)found->second;
+        //             printf("[BP RESTORE] word_after =0x%016lx | low_byte=0x%02x\n",
+        //                    (unsigned long)restored, (u8)restored);
+
+        //             errno = 0;
+        //             if (ptrace(PTRACE_POKETEXT, pid, vaddr, restored) == -1)
+        //             {
+        //                 perror("[BP RESTORE] PTRACE_POKETEXT failed");
+        //                 exit(1);
+        //             }
+
+        //             u64 verify = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
+        //             printf("[BP RESTORE] word_verify=0x%016lx | low_byte=0x%02x | %s\n",
+        //                    (unsigned long)verify, (u8)verify,
+        //                    ((u8)verify == (u8)found->second) ? "OK" : "MISMATCH!");
+
+        //             regs.rip = vaddr;
+        //             ptrace(PTRACE_SETREGS, pid, NULL, &regs);
+        //             breakpoint_remove[found->first] = found->second;
+        //             breakpoint.erase(found);
+        //         }
+        //         else
+        //         {
+        //             printf("Address not found at RIP: %lld\n", file_off);
+        //         }
+        //         ptrace(PTRACE_CONT, pid, NULL, 0);
+        //         continue;
+        //     }
+        //     ptrace(PTRACE_CONT, pid, NULL, sig == SIGTRAP ? 0 : sig);
+        // }
     }
 
     return 0;

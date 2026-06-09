@@ -10,5 +10,6 @@
 int __wrap_main(int argc, char **argv)
 {
     __tracer_init_trace_bits();
+    __tracer_init_trace_blocks();
     return __real_main(argc, argv);
 }

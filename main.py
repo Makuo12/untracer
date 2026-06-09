@@ -93,7 +93,7 @@ def create_arguments():
     os.environ[IN_DIR_ENV] = in_dir
     os.environ[OUT_DIR_ENV] = out_dir
     os.environ[SHM_KEY_FILE_NAME] = shm_key_file
-    os.environ[INPUT_FILE_ENV] = input_file
+    os.environ[INPUT_FILE_ENV] = "./pdf_test/sample-animals.pdf"
     return input_file
 
 def create_elf(compiler, target_name):
@@ -175,7 +175,9 @@ def setup_oracle_dyninst(compiler="g++", include="-I ./include", headers = "", f
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
 
+
 def setup_oracle_pdftotext(include="-I ./include"):
+    # os.remove("./output/.bblist")
     xpdf_dir = "/home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2"
     libs_dir = "/home/makuo12/Documents/forte-research/untracer/libs"
     obj_dir = "/home/makuo12/Documents/forte-research/untracer/build"
@@ -307,10 +309,10 @@ def main():
     # setup_tracer(headers = headers)
     # setup_oracle(headers = headers) 
     input_file = create_arguments()
-    # setup_oracle_pdftotext()
+    setup_oracle_pdftotext()
     # setup_tracer_pdftotext()
     # setup_trace_dyninst(headers=headers, filename="./build/pdftotext.trace")
-    # setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
+    setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
     setup_untracer()
     run_untracer()
     #create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
