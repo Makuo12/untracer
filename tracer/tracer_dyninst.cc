@@ -8,6 +8,7 @@
 #include <climits>
 #include <cstring>
 #include <fstream>
+#include <fstream>
 
 #include "config.h"
 
@@ -17,6 +18,7 @@ using std::endl;
 using std::cin;
 using std::vector;
 using std::string;
+using std::ofstream;
 using std::set;
 
 #include "BPatch.h"
@@ -96,7 +98,7 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     if (dynfix)
         handle = appBin->insertSnippet(instExprSaveRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
     /* Instruments the basic block. */
-    handle = appBin->insertSnippet(instExproracle, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
+    handle = appBin->insertSnippet(instExprTrace, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
     if (!handle)
     {
         failed = true;
@@ -112,8 +114,8 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     if (handle && !failed)
     {
         /* If path to output instrumented bb addrs list set, save the addresses of each basic block instrumented to that file. */
-        ofstream blksListFile("./output/.bblist", std::ios::app);
-        blksListFile << std::hex << curBlkAddr << "," << std::dec << curBlkID << endl;
+        ofstream blksListFile("./output/trace.bblist", std::ios::app);
+        blksListFile << std::hex << curBlkAddr << endl;
         blksListFile.close();
     }
 
@@ -177,12 +179,12 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterat
         // Catches targ[digit] synthetic Dyninst functions
         if (functionName.substr(0, 4) == "targ" && isdigit(functionName[4]))
             continue;
-        if (curBlkSize < minBlkSize)
+        if (curBlkSize < 2)
         {
             (*blkIndex)++;
             continue;
         }
-        insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
+        insert_trace(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
         (*blkIndex)++;
         continue;
     }
@@ -232,7 +234,8 @@ int main(int argc, char **argv) {
                 continue;
             }
         }
-
+        unsigned long long moduleBase = (unsigned long long)(*moduleIter)->getBaseAddr();
+        std::cout << "Module: " << curModuleName << " Base: 0x" << std::hex << moduleBase << std::dec << std::endl;
         /* Extract the module's functions and iterate through its basic blocks. */
         vector<BPatch_function *> *funcsInModule = (*moduleIter)->getProcedures();
         vector<BPatch_function *>::iterator funcIter;
@@ -240,7 +243,7 @@ int main(int argc, char **argv) {
         for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
         {
             /* Go through each function's basic blocks and insert callbacks accordingly. */
-            iterate_blocks(app, funcIter, &blkIndex);
+            iterate_blocks(app, funcIter, &blkIndex, moduleBase);
         }
     }
     /* If specified, save the instrumented binary and verify success. */

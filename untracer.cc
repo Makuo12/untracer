@@ -275,8 +275,10 @@ void modify_oracle(string &path_to_oracle, vector<u64> &list, map<u64, u8> &brea
     for (decltype(list.size()) i = 0; i < list.size(); i++)
     {
         // Skip indexes that were already hit
-        if (hits.count(i) > 0)
+        if (hits.count(i) > 0) {
+            cout << "skipping " << list[i] << " block: " << i << endl;
             continue;
+        }
 
         addr = list[i] + offset;
         if (addr != 0)
@@ -369,7 +371,7 @@ void getHitBlocks(unordered_set<int> &hits)
             hits.insert(i);
     }
     if (hits.size() > 0) {
-        cout << "on block" << hits.size() << endl;
+        cout << "on block " << hits.size() << endl;
     }
 
 
@@ -474,7 +476,6 @@ int main(int argc, char **argv)
     string in_dir(getenv(IN_DIR_ENV) ? getenv(IN_DIR_ENV) : "pdf_test");
     string out_dir(getenv(OUT_DIR_ENV) ? getenv(OUT_DIR_ENV) : "output");
     string new_path_to_oracle("./output/oracle.elf");
-    string new_path_to_oracle_two("./output/oracle_three.elf");
     while ((opt = getopt(argc, argv, "o:t:b:")) != -1)
     {
         switch (opt)
@@ -507,9 +508,7 @@ int main(int argc, char **argv)
     setup_bblist(bblist, path_to_bblock);
     copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
     modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
-
->>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
-    // Remaining args after options (e.g. target binary args)
+    char *args[] = {(char *)new_path_to_oracle.c_str(), (char *)"./pdf_test/sample-animals.pdf", NULL};
     bool first_stop = true;
     while (true)
     {
@@ -536,7 +535,6 @@ int main(int argc, char **argv)
             can_run = false;
             // already dead if WIFSIGNALED, just reap any remaining state
             // waitpid(pid, NULL, WNOHANG);
-            break;
         }
         // // 1. Normal Termination
         // if (WIFEXITED(status))

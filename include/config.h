@@ -55,7 +55,6 @@ const std::set<std::string> skipFunctions = {
     "fnmatch",
     "readlinkat",
     "FATAL",
->>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
     "SAY",
 
     // Argp

@@ -177,7 +177,7 @@ def setup_oracle_dyninst(compiler="g++", include="-I ./include", headers = "", f
 
 
 def setup_oracle_pdftotext(include="-I ./include"):
-    # os.remove("./output/.bblist")
+    os.remove("./output/.bblist")
     xpdf_dir = "/home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2"
     libs_dir = "/home/makuo12/Documents/forte-research/untracer/libs"
     obj_dir = "/home/makuo12/Documents/forte-research/untracer/build"
@@ -232,6 +232,7 @@ def setup_oracle_pdftotext(include="-I ./include"):
 
 
 def setup_tracer_pdftotext(include="-I ./include"):
+    os.remove("./output/trace.bblist")
     xpdf_dir = "/home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2"
     libs_dir = "/home/makuo12/Documents/forte-research/untracer/libs"
     obj_dir = "/home/makuo12/Documents/forte-research/untracer/build"
@@ -310,8 +311,8 @@ def main():
     # setup_oracle(headers = headers) 
     input_file = create_arguments()
     setup_oracle_pdftotext()
-    # setup_tracer_pdftotext()
-    # setup_trace_dyninst(headers=headers, filename="./build/pdftotext.trace")
+    setup_tracer_pdftotext()
+    setup_trace_dyninst(headers=headers, filename="./build/pdftotext.trace")
     setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
     setup_untracer()
     run_untracer()

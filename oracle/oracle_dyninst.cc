@@ -102,7 +102,7 @@ int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cu
     {
         /* If path to output instrumented bb addrs list set, save the addresses of each basic block instrumented to that file. */
         ofstream blksListFile("./output/.bblist", std::ios::app);
-        blksListFile << std::hex << curBlkAddr << "," << std::dec << curBlkID << endl;
+        blksListFile << std::hex << curBlkAddr << endl;
         blksListFile.close();
     }
     /* Print some useful info, if requested. */
@@ -165,7 +165,7 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterat
         // Catches targ[digit] synthetic Dyninst functions
         if (functionName.substr(0, 4) == "targ" && isdigit(functionName[4]))
             continue;
-        if (curBlkSize < minBlkSize)
+        if (curBlkSize < 2)
         {
             (*blkIndex)++;
             continue;
