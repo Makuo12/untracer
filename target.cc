@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
 
 void __tracer_block_hit(int curblkId)
 {
-    raise(SIGABRT);
+    printf("makuo is coolol %d\n", curblkId);
 }
 
 void __trace_save_rdi()

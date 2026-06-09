@@ -8,6 +8,7 @@
 #include "BPatch_image.h"
 #include "BPatch_module.h"
 #include "BPatch_function.h"
+#include "BPatch_flowGraph.h"
 #include "BPatch_point.h"
 #include "BPatch_snippet.h"
 
@@ -24,6 +25,8 @@ using std::ofstream;
 BPatch_function * trace_block_hit;
 BPatch_function * restore_rdi;
 BPatch_function * save_rdi;
+bool dynfix = true;
+bool verbose = false;
 
 // Global blocklists
 std::set<std::string> skipLibraries;
@@ -34,7 +37,7 @@ const std::set<std::string> skipFunctions = {
     "__libc_csu_init", "__libc_csu_fini", "register_tm_clones",
     "deregister_tm_clones", "__do_global_ctors_aux", "__do_global_dtors_aux",
     "frame_dummy", "__cxa_atexit", "__cxa_finalize",
-    "malloc", "calloc", "realloc", "free", "FATAL", "SAY", "__wrap_main", "main"
+    "malloc", "calloc", "realloc", "free", "FATAL", "SAY", "printf", "__wrap_main", "main"
     // Oracle functions
     "__oracle_init", "__oracle_init_shm", "__oracle_init@plt",
     "__oracle_trap_hit", "__oracle_trap_hit@plt", "__oracle_save_rdi",
@@ -75,7 +78,7 @@ BPatch_function *findFuncByName(BPatch_image *appImage, char *curFuncName)
     return funcs[0];
 }
 
-int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *curBlk, unsigned long curBlkAddr, unsigned int curBlkSize, unsigned int curBlkID)
+int insert_trace(BPatch_process *appBin, char *curFuncName, BPatch_point *curBlk, unsigned long curBlkAddr, unsigned int curBlkSize, unsigned int curBlkID)
 {
     /* Verify curBlk is instrumentable. */
     if (curBlk == NULL)
@@ -107,7 +110,10 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     /* Verify instrumenting worked. If all good, advance blkIndex and return. */
     if (!handle)
     {
-        cerr << "Failed to insert trace callback at 0x" << std::hex << curBlkAddr << std::endl;
+        // cerr << "Failed to insert trace callback at 0x" << std::hex << curBlkAddr << std::endl;
+    } else 
+    {
+        // cerr << "Success to insert trace callback at 0x" << std::hex << curBlkAddr << std::endl;
     }
 
     /* Print some useful info, if requested. */
@@ -117,7 +123,7 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     return 0;
 }
 
-void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex)
+void iterate_blocks(BPatch_process *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex)
 {
 
     /* Extract the function's name, and its pointer from the parent function vector. */
@@ -186,6 +192,9 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterat
                 string(functionName) == string("argp_state_help") ||
                 string(functionName) == string("argp_error") ||
                 string(functionName) == string("argp_parse") ||
+                string(functionName) == string("__tracer_block_hit") ||
+                string(functionName) == string("__trace_restore_rdi") ||
+                string(functionName) == string("__trace_save_rdi") ||
                 string(functionName) == string("__afl_maybe_log") ||
                 string(functionName) == string("__fsrvonly_store") ||
                 string(functionName) == string("__fsrvonly_return") ||
@@ -215,6 +224,7 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterat
 int main(int argc, char **argv)
 {
     initSkipLibraries();
+    BPatch bpatch;
     bpatch.setDelayedParsing(true);
     bpatch.setLivenessAnalysis(false);
     bpatch.setMergeTramp(false);
@@ -228,17 +238,18 @@ int main(int argc, char **argv)
         return -1;
 
     BPatch_image *appImage = appProcess->getImage();
-    if (app == NULL)
+    if (appImage == NULL)
     {
         cerr << "Failed to open binary" << endl;
         return EXIT_FAILURE;
     }
-    BPatch_image *appImage = app->getImage();
-    if (!app->loadLibrary(tracer_library))
-    {
-        cerr << "Failed to load binary" << endl;
-        return EXIT_FAILURE;
-    }
+    int blkIndex = 0;
+    // BPatch_image *appImage = app->getImage();
+    // if (!app->loadLibrary(tracer_library))
+    // {
+    //     cerr << "Failed to load binary" << endl;
+    //     return EXIT_FAILURE;
+    // }
     save_rdi = findFuncByName(appImage, (char *)"__trace_save_rdi");
     restore_rdi = findFuncByName(appImage, (char *)"__trace_restore_rdi");
     trace_block_hit = findFuncByName(appImage, (char *)"__tracer_block_hit");
@@ -273,9 +284,10 @@ int main(int argc, char **argv)
         for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
         {
             /* Go through each function's basic blocks and insert callbacks accordingly. */
-            iterate_blocks(app, funcIter, &blkIndex);
+            iterate_blocks(appProcess, funcIter, &blkIndex);
         }
     }
+            std::cerr << "[!] Process finish signal, stopping.\n";
     appProcess->continueExecution();
 
     while (!appProcess->isTerminated())
