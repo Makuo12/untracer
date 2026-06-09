@@ -49,9 +49,6 @@ const std::set<std::string> skipFunctions = {
     "calloc",
     "realloc",
     "free",
-<<<<<<< HEAD
-    "FATAL", "FATAL_C", "printf",
-=======
 
     // I/O and util
     "printf",

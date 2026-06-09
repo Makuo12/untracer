@@ -158,13 +158,6 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterat
         // Catches __tracer_* variants not explicitly listed
         if (strstr(functionName.data(), "__tracer") != NULL)
             continue;
-<<<<<<< HEAD
-
-        /* If the address is in the list of addresses to skip, skip it. */
-
-        /* If we're not in forkserver-only mode, check the block's indx/size and skip if necessary. */
-        if (*blkIndex < 0 || curBlkSize < 2)
-=======
         if (strstr(functionName.data(), "__oracle") != NULL)
             continue;
         if (strstr(functionName.data(), "__fsrvonly") != NULL)
@@ -173,22 +166,11 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterat
         if (functionName.substr(0, 4) == "targ" && isdigit(functionName[4]))
             continue;
         if (curBlkSize < minBlkSize)
->>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
         {
             (*blkIndex)++;
             continue;
         }
-<<<<<<< HEAD
-
-        // /* If path to output analyzed bb addrs list set, save the addresses of each basic block visited. */
-        // FILE *blksListFile = fopen(analyzedBBListPath, "a");
-        // fprintf(blksListFile, "%lu\n", curBlkAddr);
-        // fclose(blksListFile);
         insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
-
-=======
-        insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
->>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
         (*blkIndex)++;
         continue;
     }
@@ -251,11 +233,7 @@ int main(int argc, char **argv)
         for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
         {
             /* Go through each function's basic blocks and insert callbacks accordingly. */
-<<<<<<< HEAD
-            iterateBlocks(app, funcIter, &blkIndex);
-=======
             iterate_blocks(app, funcIter, &blkIndex, moduleBase);
->>>>>>> 1b5e0e5000e2327bb1e98321ab6f2faac4a4bafa
         }
     }
     /* If specified, save the instrumented binary and verify success. */
