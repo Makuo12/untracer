@@ -423,7 +423,8 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
         waitpid(pid, &status, 0);
         MEM_BARRIER();
         getHitBlocks(index_found);
-
+        copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
+        modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
         // Copy input file to in_dir
         auto saveInputFile = [&]()
         {
@@ -510,7 +511,6 @@ void fork_child(char **args,
         {
             trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir, indexes_found);
         }
-        printf("Child killed abruptly by signal %d\n", term_sig);
         // already dead if WIFSIGNALED, just reap any remaining state
         // waitpid(pid, NULL, WNOHANG);
     }
@@ -518,6 +518,7 @@ void fork_child(char **args,
 
 int main(int argc, char **argv)
 {
+    cout << "starting untracer" << endl;
     vector<u64> bblist;
     map<u64, u8> breakpoint;
     map<u64, u8> breakpoint_remove;
@@ -567,18 +568,13 @@ int main(int argc, char **argv)
     modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
     char *args[] = {(char *)new_path_to_oracle.c_str(), (char *)"./input/cur_input", NULL};
     size_t global_count = 0;
-
     while (true)
     {
         if (global_count >= entry_count) {
             global_count = 0;
         }
-        copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
-        modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
         Entry *entry = &entries[global_count++];
-
-        if (entry->has_issues)
-        {
+        if (strcmp(entry->file_path, "pdf_test/.DS_Store") == 0) {
             continue;
         }
         int fd = open(entry->file_path, O_RDONLY);
@@ -606,6 +602,7 @@ int main(int argc, char **argv)
             // Pass the string reference cleanly
             // __oracle_write_testcase(mem, entry, input_file);
             // Execute target main
+            cout << entry->file_path << endl;
             fork_child(args,
                     path_to_oracle,
                     path_to_trace,

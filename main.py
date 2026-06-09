@@ -93,7 +93,7 @@ def create_arguments():
     os.environ[IN_DIR_ENV] = in_dir
     os.environ[OUT_DIR_ENV] = out_dir
     os.environ[SHM_KEY_FILE_NAME] = shm_key_file
-    os.environ[INPUT_FILE_ENV] = "./pdf_test/sample-animals.pdf"
+    os.environ[INPUT_FILE_ENV] = input_file
     return input_file
 
 def create_elf(compiler, target_name):
@@ -286,7 +286,8 @@ def setup_tracer_pdftotext(include="-I ./include"):
     print(f"Tracer pdftotext built -> {output}")
 
 def setup_untracer(compiler="g++", include="-I ./include"):
-    untracer_elf = f"{compiler} {include} untracer.cc -o untracer.elf"
+    libs_dir = "/home/makuo12/Documents/forte-research/untracer/libs"
+    untracer_elf = f"{compiler} {include} untracer.cc -L{libs_dir} -Wl,-rpath,{libs_dir} -ltracer -loracle -o untracer.elf"
     result = subprocess.run(untracer_elf, shell=True, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
@@ -294,7 +295,7 @@ def setup_untracer(compiler="g++", include="-I ./include"):
         
 def run_untracer():
     # cerr << "Usage: " << argv[0] << " -o <oracle> -t <trace> -b <bblock> -i <input>" << endl;
-    result = subprocess.run(["./untracer.elf", "-t", "./build/tracer_instrumented.elf", "-b", "./output/.bblist", "-o", "./build/pdftotext.oracle"])
+    result = subprocess.run(["./untracer.elf", "-t", "./build/tracer_instrumented.elf", "-b", "./output/trace.bblist", "-o", "./build/pdftotext.trace"])
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
@@ -310,10 +311,10 @@ def main():
     # setup_tracer(headers = headers)
     # setup_oracle(headers = headers) 
     input_file = create_arguments()
-    setup_oracle_pdftotext()
-    setup_tracer_pdftotext()
-    setup_trace_dyninst(headers=headers, filename="./build/pdftotext.trace")
-    setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
+    # setup_oracle_pdftotext()
+    # setup_tracer_pdftotext()
+    # setup_trace_dyninst(headers=headers, filename="./build/pdftotext.trace")
+    # setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
     setup_untracer()
     run_untracer()
     #create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
