@@ -56,8 +56,16 @@ static int __trace_block_shm_id = -1;
 u8 __trace_virgin_bits[MAP_SIZE];
 u16 __trace_class_lookup16[MAP_SIZE];
 
+// ADD THESE:
+u8 __trace_virgin_blocks[BLOCK_SIZE];
+
 void __tracer_init_virgin_bits(void) {
     memset(__trace_virgin_bits, 255, MAP_SIZE);
+}
+
+void __tracer_init_virgin_blocks(void)
+{
+    memset(__trace_virgin_blocks, 0xFF, BLOCK_SIZE); // all unseen
 }
 
 void __tracer_cleanup_trace_bits(void) {
@@ -385,29 +393,38 @@ std::string generateRandomFilename(const std::string& extension = ".txt") {
     return filename;
 }
 
-void getHitBlocks(unordered_set<int> &hits)
+bool getHitBlocks(unordered_set<int> &hits)
 {
+    bool new_found = false;
     for (int i = 0; i < BLOCK_SIZE; i++)
     {
         if (trace_blocks[i] != 0)
+        {
             hits.insert(i);
+            if (__trace_virgin_blocks[i] == 0xFF) // first time seeing this block
+            {
+                __trace_virgin_blocks[i] = 0; // mark as seen
+                new_found = true;
+            }
+        }
     }
-    if (hits.size() > 0) {
-        cout << "on block " << hits.size() << endl;
+    if (hits.size() > 0)
+    {
+        cout << "hit blocks: " << hits.size() << endl;
     }
-
-
+    return new_found;
 }
 
-void trace(const string &path_to_oracle, const string &path_to_trace, const string &path_to_input, 
-    const string &in_dir, const string &out_dir, unordered_set<int> &index_found)
+void trace(const string &path_to_oracle, const string &path_to_trace, const string &path_to_input,
+           const string &in_dir, const string &out_dir, unordered_set<int> &index_found,
+          vector<u64> &bblist, map<u64, u8> &breakpoint, string &new_path_to_oracle)
 {
     cout << "on trace" << endl;
     memset(trace_bits, 0, MAP_SIZE);
+    memset(trace_blocks, 0, BLOCK_SIZE); // clear block hits before each run
     pid_t pid = fork();
     if (pid == 0)
     {
-        // Child — execute the oracle binary with input file
         char *args[] = {
             (char *)path_to_trace.c_str(),
             (char *)path_to_input.c_str(),
@@ -418,51 +435,22 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
     }
     else if (pid > 0)
     {
-        // Parent — wait for child to finish
         int status;
         waitpid(pid, &status, 0);
         MEM_BARRIER();
-        getHitBlocks(index_found);
-        copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
-        modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
-        // Copy input file to in_dir
-        auto saveInputFile = [&]()
-        {
-            struct stat st;
-            if (stat(path_to_input.c_str(), &st) == 0)
-            {
-                ifstream input_file(path_to_input, std::ios::binary);
-                string filename = generateRandomFilename();
-                ofstream file(in_dir + "/" + filename, std::ios::binary);
-                if (input_file.is_open() && file.is_open())
-                {
-                    file << input_file.rdbuf();
-                }
-                input_file.close();
-                file.close();
-            }
-        };
 
-        // if (WIFEXITED(status))
-        // {
-        //     __tracer_classify_counts((u64 *)trace_bits);
-        //     bool found = __tracer_has_bit();
-        //     if (found)
-        //     {
-        //         saveInputFile();
-        //     }
-        //     waitpid(pid, NULL, 0); // reap the child fully
-        // }
-        // else if (WIFSIGNALED(status))
-        // {
-        //     __tracer_classify_counts((u64 *)trace_bits);
-        //     bool found = __tracer_has_bit();
-        //     if (found)
-        //     {
-        //         saveInputFile();
-        //     }
-        //     waitpid(pid, NULL, 0); // reap the child fully
-        // }
+        bool new_blocks = getHitBlocks(index_found); // check virgin map inside
+
+        if (new_blocks)
+        {
+            cout << "new blocks found, rebuilding oracle" << endl;
+            copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
+            modify_oracle(new_path_to_oracle, bblist, breakpoint, index_found);
+        }
+        else
+        {
+            cout << "no new blocks, skipping oracle rebuild" << endl;
+        }
     }
     else
     {
@@ -491,7 +479,8 @@ void fork_child(char **args,
                 const string &path_to_input,
                 const string &in_dir,
                 const string &out_dir,
-                unordered_set<int> &indexes_found
+                unordered_set<int> &indexes_found,
+                vector<u64> &bblist, map<u64, u8> &breakpoint, string &new_path_to_oracle
 )
 {
     pid_t pid = fork();
@@ -509,7 +498,7 @@ void fork_child(char **args,
         int term_sig = WTERMSIG(status);
         if (term_sig == SIGTRAP)
         {
-            trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir, indexes_found);
+            trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir, indexes_found, bblist, breakpoint, new_path_to_oracle);
         }
         // already dead if WIFSIGNALED, just reap any remaining state
         // waitpid(pid, NULL, WNOHANG);
@@ -560,6 +549,7 @@ int main(int argc, char **argv)
     __tracer_init_trace_bits();
     __tracer_init_trace_blocks();
     __tracer_init_virgin_bits();
+    __tracer_init_virgin_blocks();
     setup_bblist(bblist, path_to_bblock);
     Entry *entries = NULL;
     size_t entry_count = 0;
@@ -609,7 +599,7 @@ int main(int argc, char **argv)
                     path_to_input,
                     in_dir,
                     out_dir,
-                    indexes_found
+                    indexes_found, bblist, breakpoint, new_path_to_oracle
             );
             // Re-apply/revert the bit
             __oracle_apply(mem, i);
