@@ -19,10 +19,11 @@
 extern "C"
 {
 #endif
-    void __oracle_init(Entry **entries, int *entry_count, const char *input_file);
+    void __oracle_init(Entry **entries, size_t *entry_count, const char *input_file);
     void __oracle_write_testcase(u8 *mem, Entry *entry, const char *input_file);
     void __oracle_init_shm(void);
     int __real_main(int, char **);
+    void __oracle_apply(u8 *mem, int position);
 
 #ifdef __cplusplus
 }

@@ -28,7 +28,8 @@
 #include "types.h"
 #include "config.h"
 #include "logger.h"
-// #include "libtracer.h"
+#include "libtracer.h"
+#include "liboracle.h"
 
 using std::string;
 using std::vector;
@@ -252,6 +253,27 @@ void copy_binary(char *src_path, char *dst_path)
     }
 }
 
+void copy_binary(u8 *src, size_t src_size, char *dst_path)
+{
+    FILE *dst_file = fopen(dst_path, "wb");
+    if (dst_file == NULL)
+    {
+        perror(dst_path);
+        exit(1);
+    }
+    if (fwrite(src, 1, src_size, dst_file) != src_size)
+    {
+        perror(dst_path);
+        fclose(dst_file);
+        exit(1);
+    }
+    fclose(dst_file);
+    if (chmod(dst_path, 0777) < 0)
+    {
+        perror(dst_path);
+        exit(1);
+    }
+}
 
 void remodify_oracle(string &path_to_oracle, map<u64, u8> &breakpoint)
 {
@@ -378,7 +400,7 @@ void getHitBlocks(unordered_set<int> &hits)
 }
 
 void trace(const string &path_to_oracle, const string &path_to_trace, const string &path_to_input, 
-    string &in_dir, string &out_dir, unordered_set<int> &index_found)
+    const string &in_dir, const string &out_dir, unordered_set<int> &index_found)
 {
     cout << "on trace" << endl;
     memset(trace_bits, 0, MAP_SIZE);
@@ -462,6 +484,38 @@ void create_copy_oracle(string &path_to_oracle) {
     path_to_oracle += out_file_name;
 }
 
+void fork_child(char **args,
+                const string &path_to_oracle,
+                const string &path_to_trace,
+                const string &path_to_input,
+                const string &in_dir,
+                const string &out_dir,
+                unordered_set<int> &indexes_found
+)
+{
+    pid_t pid = fork();
+
+    if (pid == 0)
+    {
+        // Child
+        // ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+        execvp(args[0], args);
+    }
+    int status;
+    waitpid(pid, &status, 0);
+    if (WIFSIGNALED(status))
+    {
+        int term_sig = WTERMSIG(status);
+        if (term_sig == SIGTRAP)
+        {
+            trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir, indexes_found);
+        }
+        printf("Child killed abruptly by signal %d\n", term_sig);
+        // already dead if WIFSIGNALED, just reap any remaining state
+        // waitpid(pid, NULL, WNOHANG);
+    }
+}
+
 int main(int argc, char **argv)
 {
     vector<u64> bblist;
@@ -506,117 +560,148 @@ int main(int argc, char **argv)
     __tracer_init_trace_blocks();
     __tracer_init_virgin_bits();
     setup_bblist(bblist, path_to_bblock);
+    Entry *entries = NULL;
+    size_t entry_count = 0;
+    __oracle_init(&entries, &entry_count, path_to_input.c_str());
     copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
     modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
-    char *args[] = {(char *)new_path_to_oracle.c_str(), (char *)"./pdf_test/sample-animals.pdf", NULL};
-    bool first_stop = true;
+    char *args[] = {(char *)new_path_to_oracle.c_str(), (char *)"./input/cur_input", NULL};
+    size_t global_count = 0;
+
     while (true)
     {
+        if (global_count >= entry_count) {
+            global_count = 0;
+        }
         copy_binary((char *)path_to_oracle.data(), (char *)new_path_to_oracle.data());
         modify_oracle(new_path_to_oracle, bblist, breakpoint, indexes_found);
-        first_stop = true;
-        bool can_run = true;
-        pid_t pid = fork();
-        if (pid == 0)
+        Entry *entry = &entries[global_count++];
+
+        if (entry->has_issues)
         {
-            // Child
-            // ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-            execvp(args[0], args);
+            continue;
         }
-        int status;
-        waitpid(pid, &status, 0);
-        if (WIFSIGNALED(status))
+        int fd = open(entry->file_path, O_RDONLY);
+        if (fd < 0)
         {
-            int term_sig = WTERMSIG(status);
-            if (term_sig == SIGTRAP) {
-                trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir, indexes_found);
-            }
-            printf("Child killed abruptly by signal %d\n", term_sig);
-            can_run = false;
-            // already dead if WIFSIGNALED, just reap any remaining state
-            // waitpid(pid, NULL, WNOHANG);
+            entry->has_issues = 1;
+            char err_msg[512];
+            snprintf(err_msg, sizeof(err_msg), "Failed to open file: %s", entry->d_name);
+            continue;
         }
-        // // 1. Normal Termination
-        // if (WIFEXITED(status))
-        // {
-        //     SAY("Child exited normally");
-        //     waitpid(pid, NULL, WNOHANG);
-        //     can_run = false;
-        //     break;
-        // }
+        u8 *mem = (u8 *)mmap(NULL, entry->st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+        close(fd);
 
-        // // 2. Killed by an unhandled signal (Abrupt Crash)
-
-        // if (WIFSTOPPED(status))
-        // {
-        //     int sig = WSTOPSIG(status);
-        //     if (sig == SIGSEGV || sig == SIGILL || sig == SIGBUS || sig == SIGABRT)
-        //     {
-        //         can_run = false;
-        //         printf("Child killed abruptly by signal %d\n", sig);
-        //         // ptrace(PTRACE_KILL, pid, NULL, NULL);
-        //         waitpid(pid, NULL, 0); // reap the child fully
-        //         break;
-        //     }
-        //     else if (sig == SIGTRAP)
-        //     {
-        //         if (first_stop)
-        //         {
-        //             first_stop = false;
-        //             // ptrace(PTRACE_CONT, pid, NULL, 0);
-        //             continue;
-        //         }
-        //         trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir);
-        //         struct user_regs_struct regs;
-        //         ptrace(PTRACE_GETREGS, pid, NULL, &regs);
-
-        //         // This will print 40147b the FIRST time
-        //         // And it will print 401171 (your breakpoint) the SECOND time
-        //         u64 vaddr = regs.rip - 1;
-        //         u64 file_off = vaddr - 0x400000;
-        //         printf("Child stopped at RIP: %lld\n", file_off);
-        //         auto found = breakpoint.find(file_off);
-
-        //         if (found != breakpoint.end())
-        //         {
-        //             printf("[BP RESTORE] vaddr=0x%lx | original_byte=0x%02x\n",
-        //                    (unsigned long)vaddr, (u8)found->second);
-
-        //             u64 data = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
-        //             printf("[BP RESTORE] word_before=0x%016lx | low_byte=0x%02x\n",
-        //                    (unsigned long)data, (u8)data);
-
-        //             u64 restored = (data & ~0xFFULL) | (u8)found->second;
-        //             printf("[BP RESTORE] word_after =0x%016lx | low_byte=0x%02x\n",
-        //                    (unsigned long)restored, (u8)restored);
-
-        //             errno = 0;
-        //             if (ptrace(PTRACE_POKETEXT, pid, vaddr, restored) == -1)
-        //             {
-        //                 perror("[BP RESTORE] PTRACE_POKETEXT failed");
-        //                 exit(1);
-        //             }
-
-        //             u64 verify = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
-        //             printf("[BP RESTORE] word_verify=0x%016lx | low_byte=0x%02x | %s\n",
-        //                    (unsigned long)verify, (u8)verify,
-        //                    ((u8)verify == (u8)found->second) ? "OK" : "MISMATCH!");
-
-        //             regs.rip = vaddr;
-        //             ptrace(PTRACE_SETREGS, pid, NULL, &regs);
-        //             breakpoint_remove[found->first] = found->second;
-        //             breakpoint.erase(found);
-        //         }
-        //         else
-        //         {
-        //             printf("Address not found at RIP: %lld\n", file_off);
-        //         }
-        //         ptrace(PTRACE_CONT, pid, NULL, 0);
-        //         continue;
-        //     }
-        //     ptrace(PTRACE_CONT, pid, NULL, sig == SIGTRAP ? 0 : sig);
-        // }
+        if (mem == MAP_FAILED)
+        {
+            entry->has_issues = 1;
+            char err_msg[512];
+            snprintf(err_msg, sizeof(err_msg), "Failed to map file: %s", entry->d_name);
+            continue;
+        }
+        for (int i = 0; i < 100; ++i)
+        {
+            __oracle_apply(mem, i);
+            copy_binary(mem, entry->st_size, (char *)"./input/cur_input");
+            // Pass the string reference cleanly
+            // __oracle_write_testcase(mem, entry, input_file);
+            // Execute target main
+            fork_child(args,
+                    path_to_oracle,
+                    path_to_trace,
+                    path_to_input,
+                    in_dir,
+                    out_dir,
+                    indexes_found
+            );
+            // Re-apply/revert the bit
+            __oracle_apply(mem, i);
+            entry->single_pass += 1;
+        }
     }
 
     return 0;
 }
+
+
+
+    // // 1. Normal TVermination
+    // if (WIFEXITED(status))
+    // {
+    //     SAY("Child exited normally");
+    //     waitpid(pid, NULL, WNOHANG);
+    //     can_run = false;
+    //     break;
+    // }
+
+    // // 2. Killed by an unhandled signal (Abrupt Crash)
+
+    // if (WIFSTOPPED(status))
+    // {
+    //     int sig = WSTOPSIG(status);
+    //     if (sig == SIGSEGV || sig == SIGILL || sig == SIGBUS || sig == SIGABRT)
+    //     {
+    //         can_run = false;
+    //         printf("Child killed abruptly by signal %d\n", sig);
+    //         // ptrace(PTRACE_KILL, pid, NULL, NULL);
+    //         waitpid(pid, NULL, 0); // reap the child fully
+    //         break;
+    //     }
+    //     else if (sig == SIGTRAP)
+    //     {
+    //         if (first_stop)
+    //         {
+    //             first_stop = false;
+    //             // ptrace(PTRACE_CONT, pid, NULL, 0);
+    //             continue;
+    //         }
+    //         trace(path_to_oracle, path_to_trace, path_to_input, in_dir, out_dir);
+    //         struct user_regs_struct regs;
+    //         ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+
+    //         // This will print 40147b the FIRST time
+    //         // And it will print 401171 (your breakpoint) the SECOND time
+    //         u64 vaddr = regs.rip - 1;
+    //         u64 file_off = vaddr - 0x400000;
+    //         printf("Child stopped at RIP: %lld\n", file_off);
+    //         auto found = breakpoint.find(file_off);
+
+    //         if (found != breakpoint.end())
+    //         {
+    //             printf("[BP RESTORE] vaddr=0x%lx | original_byte=0x%02x\n",
+    //                    (unsigned long)vaddr, (u8)found->second);
+
+    //             u64 data = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
+    //             printf("[BP RESTORE] word_before=0x%016lx | low_byte=0x%02x\n",
+    //                    (unsigned long)data, (u8)data);
+
+    //             u64 restored = (data & ~0xFFULL) | (u8)found->second;
+    //             printf("[BP RESTORE] word_after =0x%016lx | low_byte=0x%02x\n",
+    //                    (unsigned long)restored, (u8)restored);
+
+    //             errno = 0;
+    //             if (ptrace(PTRACE_POKETEXT, pid, vaddr, restored) == -1)
+    //             {
+    //                 perror("[BP RESTORE] PTRACE_POKETEXT failed");
+    //                 exit(1);
+    //             }
+
+    //             u64 verify = ptrace(PTRACE_PEEKTEXT, pid, vaddr, NULL);
+    //             printf("[BP RESTORE] word_verify=0x%016lx | low_byte=0x%02x | %s\n",
+    //                    (unsigned long)verify, (u8)verify,
+    //                    ((u8)verify == (u8)found->second) ? "OK" : "MISMATCH!");
+
+    //             regs.rip = vaddr;
+    //             ptrace(PTRACE_SETREGS, pid, NULL, &regs);
+    //             breakpoint_remove[found->first] = found->second;
+    //             breakpoint.erase(found);
+    //         }
+    //         else
+    //         {
+    //             printf("Address not found at RIP: %lld\n", file_off);
+    //         }
+    //         ptrace(PTRACE_CONT, pid, NULL, 0);
+    //         continue;
+    //     }
+    //     ptrace(PTRACE_CONT, pid, NULL, sig == SIGTRAP ? 0 : sig);
+    // }

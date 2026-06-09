@@ -17,7 +17,11 @@ register long rdi asm("di"); // the warning is fine - we need the warning becaus
 extern "C"
 {
 #endif
-void __oracle_init(Entry **entries, int *entry_count, const char *input_file)
+void __oracle_apply(u8 *mem, int position)
+{
+    mem[position >> 3] ^= (128 >> (position & 7));
+}
+void __oracle_init(Entry **entries, size_t *entry_count, const char *input_file)
 {
     // 1. Handle environment variables and default fallback strings
     const char *env_in = getenv(IN_DIR_ENV);

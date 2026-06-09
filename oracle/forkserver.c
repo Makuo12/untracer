@@ -12,9 +12,6 @@
 #include "types.h"
 #include "liboracle.h"
 
-void __oracle_apply(u8 * mem, int position) {
-    mem[position >> 3] ^= (128 >> (position & 7));
-}
 
 void __oracle_fuzz(int argc, char **argv, Entry *entries, int entry_count, const char *input_file)
 {
@@ -22,34 +19,34 @@ void __oracle_fuzz(int argc, char **argv, Entry *entries, int entry_count, const
 
     while (global_count < (size_t)entry_count)
     {
-        // Entry *entry = &entries[global_count++];
+        Entry *entry = &entries[global_count++];
 
-        // if (entry->has_issues)
-        // {
-        //     continue;
-        // }
+        if (entry->has_issues)
+        {
+            continue;
+        }
 
-        // int fd = open(entry->file_path, O_RDONLY);
-        // if (fd < 0)
-        // {
-        //     entry->has_issues = 1;
-        //     // Combined messages since C doesn't natively parse {"message", string} initializer lists
-        //     char err_msg[512];
-        //     snprintf(err_msg, sizeof(err_msg), "Failed to open file: %s", entry->d_name);
-        //     continue;
-        // }
+        int fd = open(entry->file_path, O_RDONLY);
+        if (fd < 0)
+        {
+            entry->has_issues = 1;
+            // Combined messages since C doesn't natively parse {"message", string} initializer lists
+            char err_msg[512];
+            snprintf(err_msg, sizeof(err_msg), "Failed to open file: %s", entry->d_name);
+            continue;
+        }
 
         // // mmap implementation remains identical, just cast to (u8*)
-        // u8 *mem = (u8 *)mmap(NULL, entry->st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
-        // close(fd);
+        u8 *mem = (u8 *)mmap(NULL, entry->st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+        close(fd);
 
-        // if (mem == MAP_FAILED)
-        // {
-        //     entry->has_issues = 1;
-        //     char err_msg[512];
-        //     snprintf(err_msg, sizeof(err_msg), "Failed to map file: %s", entry->d_name);
-        //     continue;
-        // }
+        if (mem == MAP_FAILED)
+        {
+            entry->has_issues = 1;
+            char err_msg[512];
+            snprintf(err_msg, sizeof(err_msg), "Failed to map file: %s", entry->d_name);
+            continue;
+        }
         printf("Done with init \n");
         // Fuzz one bit loop
         // int len = entry->st_size << 3;
