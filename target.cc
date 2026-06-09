@@ -3,6 +3,9 @@
 #include <fstream>
 #include <vector>
 
+static long savedDi;
+register long rdi asm("di"); // the warning is fine - we need the warning because of a bug in dyninst
+
 int process_going(std::vector<char> &data)
 {
     if (data.size() < 1)
@@ -47,7 +50,27 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-
-void test_hit() {
+void __tracer_block_hit(int curblkId)
+{
     raise(SIGABRT);
+}
+
+void __trace_save_rdi()
+{
+    savedDi = rdi;
+    /*
+    asm("pop %rax"); // take care of rip
+    asm("push %rdi");
+    asm("push %rax");
+    */
+}
+
+void __trace_restore_rdi()
+{
+    rdi = savedDi;
+    /*
+    asm("pop %rax"); // take care of rip
+    asm("pop %rdi");
+    asm("push %rax");
+    */
 }
