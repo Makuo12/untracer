@@ -1,4 +1,5 @@
 #include <iostream>
+#include <signal.h>
 #include <fstream>
 #include <vector>
 
@@ -29,7 +30,6 @@ int main(int argc, char *argv[])
         std::cerr << "Usage: " << argv[0] << " <input_file>" << std::endl;
         return 1;
     }
-
     std::ifstream file(argv[1], std::ios::binary);
     if (!file)
     {
@@ -40,7 +40,14 @@ int main(int argc, char *argv[])
     std::vector<char> data((std::istreambuf_iterator<char>(file)),
                            std::istreambuf_iterator<char>());
 
-    process_going(data);
+    while (1) {
+        process_going(data);
+    }
 
     return 0;
+}
+
+
+void test_hit() {
+    raise(SIGABRT);
 }

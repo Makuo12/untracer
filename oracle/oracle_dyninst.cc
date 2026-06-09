@@ -1,12 +1,3 @@
-using std::cerr;
-using std::cout;
-using std::endl;
-using std::cin;
-using std::vector;
-using std::string;
-using std::set;
-using std::ifstream;
-using std::ofstream;
 
 #include <iostream>
 #include <vector>
@@ -20,6 +11,20 @@ using std::ofstream;
 #include "BPatch_point.h"
 #include "BPatch_snippet.h"
 
+using std::cerr;
+using std::cout;
+using std::endl;
+using std::cin;
+using std::vector;
+using std::string;
+using std::set;
+using std::ifstream;
+using std::ofstream;
+
+BPatch_function * trace_block_hit;
+BPatch_function * restore_rdi;
+BPatch_function * save_rdi;
+
 // Global blocklists
 std::set<std::string> skipLibraries;
 
@@ -29,7 +34,7 @@ const std::set<std::string> skipFunctions = {
     "__libc_csu_init", "__libc_csu_fini", "register_tm_clones",
     "deregister_tm_clones", "__do_global_ctors_aux", "__do_global_dtors_aux",
     "frame_dummy", "__cxa_atexit", "__cxa_finalize",
-    "malloc", "calloc", "realloc", "free", "FATAL", "SAY", "__wrap_main",
+    "malloc", "calloc", "realloc", "free", "FATAL", "SAY", "__wrap_main", "main"
     // Oracle functions
     "__oracle_init", "__oracle_init_shm", "__oracle_init@plt",
     "__oracle_trap_hit", "__oracle_trap_hit@plt", "__oracle_save_rdi",
@@ -42,7 +47,7 @@ const std::set<std::string> skipFunctions = {
 
 void initSkipLibraries()
 {
-    skipLibraries.insert("liboracle.so"); // Stripped path for easier matching
+    skipLibraries.insert("./libs/liboracle.so"); // Stripped path for easier matching
     skipLibraries.insert("libc.so.6");
     skipLibraries.insert("libc.so.7");
     skipLibraries.insert("ld-2.5.so");
@@ -68,7 +73,18 @@ bool shouldSkipModule(const std::string &modName)
     return false;
 }
 
-BPatch bpatch;
+BPatch_function *findFuncByName(BPatch_image *appImage, char *curFuncName)
+{
+    BPatch_Vector<BPatch_function *> funcs;
+    if (NULL == appImage->findFunction(curFuncName, funcs) || !funcs.size() || NULL == funcs[0])
+    {
+        cerr << "Failed to find " << curFuncName << " function." << endl;
+        return NULL;
+    }
+
+    return funcs[0];
+}
+
 
 int main(int argc, char **argv)
 {
@@ -77,9 +93,18 @@ int main(int argc, char **argv)
         std::cerr << "Usage: " << argv[0] << " <target_executable>\n";
         return -1;
     }
-
+    const char *targetArgv[] = {
+        "/home/makuo12/Documents/forte-research/untracer/target.elf",
+        "/home/makuo12/Documents/forte-research/untracer/read.txt",
+        nullptr
+    };
     initSkipLibraries();
-    BPatch_process *appProcess = bpatch.processCreate(argv[1], nullptr);
+    BPatch bpatch;
+    bpatch.setTypeChecking(true);
+    bpatch.setDelayedParsing(true);
+    bpatch.setLivenessAnalysis(false);
+    bpatch.setMergeTramp(false);
+    BPatch_process *appProcess = bpatch.processCreate(targetArgv[0], targetArgv);
     if (!appProcess)
         return -1;
 
@@ -87,9 +112,9 @@ int main(int argc, char **argv)
 
     // 1. Get all modules (executable and loaded shared libraries)
     std::vector<BPatch_module *> *modules = appImage->getModules();
-    BPatch_breakPointExpr breakPointSnippet;
+    BPatch_nullExpr n;
     size_t breakpointCount = 0;
-
+    trace_block_hit = findFuncByName(appImage, (char *)"test_hit");
     for (BPatch_module *mod : *modules)
     {
         char modBuffer[512];
@@ -109,20 +134,88 @@ int main(int argc, char **argv)
         {
             char funcBuffer[512];
             func->getName(funcBuffer, sizeof(funcBuffer));
-            std::string funcName(funcBuffer);
+            std::string curFuncName(funcBuffer);
 
             // 4. Filter out skipped functions
-            if (skipFunctions.find(funcName) != skipFunctions.end())
+            if (skipFunctions.find(curFuncName) != skipFunctions.end())
             {
-                std::cout << "[Skip Function] " << funcName << " in " << modName << "\n";
+                // std::cout << "[Skip Function] " << funcName << " in " << modName << "\n";
                 continue;
             }
-
+            if (string(curFuncName) == string("init") ||
+                string(curFuncName) == string("_init") ||
+                string(curFuncName) == string("fini") ||
+                string(curFuncName) == string("_fini") ||
+                string(curFuncName) == string("register_tm_clones") ||
+                string(curFuncName) == string("deregister_tm_clones") ||
+                string(curFuncName) == string("frame_dummy") ||
+                string(curFuncName) == string("__do_global_ctors_aux") ||
+                string(curFuncName) == string("__do_global_dtors_aux") ||
+                string(curFuncName) == string("__libc_csu_init") ||
+                string(curFuncName) == string("__libc_csu_fini") ||
+                string(curFuncName) == string("start") ||
+                string(curFuncName) == string("_start") ||
+                string(curFuncName) == string("__libc_start_main") ||
+                string(curFuncName) == string("__gmon_start__") ||
+                string(curFuncName) == string("__cxa_atexit") ||
+                string(curFuncName) == string("__cxa_finalize") ||
+                string(curFuncName) == string("__assert_fail") ||
+                string(curFuncName) == string("free") ||
+                string(curFuncName) == string("fnmatch") ||
+                string(curFuncName) == string("readlinkat") ||
+                string(curFuncName) == string("malloc") ||
+                string(curFuncName) == string("calloc") ||
+                string(curFuncName) == string("realloc") ||
+                string(curFuncName) == string("argp_failure") ||
+                string(curFuncName) == string("argp_help") ||
+                string(curFuncName) == string("argp_state_help") ||
+                string(curFuncName) == string("argp_error") ||
+                string(curFuncName) == string("argp_parse") ||
+                string(curFuncName) == string("__afl_maybe_log") ||
+                string(curFuncName) == string("__fsrvonly_store") ||
+                string(curFuncName) == string("__fsrvonly_return") ||
+                string(curFuncName) == string("__fsrvonly_setup") ||
+                string(curFuncName) == string("__fsrvonly_setup_first") ||
+                string(curFuncName) == string("__fsrvonly_forkserver") ||
+                string(curFuncName) == string("__fsrvonly_fork_wait_loop") ||
+                string(curFuncName) == string("__fsrvonly_fork_resume") ||
+                string(curFuncName) == string("__fsrvonly_die") ||
+                string(curFuncName) == string("__fsrvonly_setup_abort") ||
+                string(curFuncName) == string(".AFL_SHM_ENV") ||
+                (string(curFuncName).substr(0, 4) == string("targ") && isdigit(string(curFuncName)[5])))
+            {
+                continue;
+            }
             // 5. Safely insert breakpoint snippet at function entry
             std::vector<BPatch_point *> *entries = func->findPoint(BPatch_entry);
             if (entries && !entries->empty())
             {
-                appProcess->insertSnippet(breakPointSnippet, *entries);
+                BPatch_Vector<BPatch_snippet *> instArgsDynfix;
+                BPatch_Vector<BPatch_snippet *> instArgs;
+
+                BPatch_constExpr argCurBlkID();
+                instArgs.push_back(&argCurBlkID);
+
+                BPatch_funcCallExpr instExprSaveRdi(*save_rdi, instArgsDynfix);
+                BPatch_funcCallExpr instExprRestRdi(*restore_rdi, instArgsDynfix);
+                BPatch_funcCallExpr instExprTrace(*trace_block_hit, instArgs);
+                BPatchSnippetHandle *handle;
+
+                /* RDI fix handling. */
+                if (true)
+                    handle = appProcess->insertSnippet(instExprSaveRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
+
+                /* Instruments the basic block. */
+                handle = appBin->insertSnippet(instExprTrace, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
+
+                /* Wrap up RDI fix handling. */
+                if (true)
+                    handle = appBin->insertSnippet(instExprRestRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
+                /* Verify instrumenting worked. If all good, advance blkIndex and return. */
+                if (!handle)
+                {
+                    cerr << "Failed to insert trace callback at 0x" << std::hex << curBlkAddr << std::endl;
+                }
                 breakpointCount++;
             }
         }
@@ -130,20 +223,38 @@ int main(int argc, char **argv)
 
     std::cout << "\nSuccessfully inserted " << breakpointCount << " breakpoints.\n";
 
-    // 6. Run the target process loop
     appProcess->continueExecution();
+
     while (!appProcess->isTerminated())
     {
         bpatch.waitForStatusChange();
 
+        if (appProcess->isTerminated())
+            break;
+
         if (appProcess->isStopped())
         {
-            // A safe function hit a breakpoint!
-            std::cout << "[!] Breakpoint hit inside allowed code base." << std::endl;
+            // Get the stop reason
+            std::cerr << "[!] Process received signal, stopping.\n";
 
-            // Handle your tracking/fuzzing state here...
-
+            // Breakpoint hit - just continue silently
             appProcess->continueExecution();
+        }
+    }
+
+    // Check exit code
+    if (appProcess->isTerminated())
+    {
+        if (appProcess->terminationStatus() == ExitedNormally)
+        {
+            std::cout << "[+] Process exited normally, code: "
+                      << appProcess->getExitCode() << "\n";
+        }
+        else
+        {
+            std::cout << "[!] Process terminated abnormally.\n";
+            std::cout << "[!] Termination signal: "
+                      << appProcess->getExitSignal() << "\n";
         }
     }
 

@@ -1,0 +1,95 @@
+Enabling DyninstAPI startup debug
+Creating process /home/makuo12/Documents/forte-research/untracer/target.elf in directory 
+Arguments: (2)
+   0: /home/makuo12/Documents/forte-research/untracer/target.elf
+   1: /home/makuo12/Documents/forte-research/untracer/pdf_test/read.txt
+Environment: (1)
+   0: DYNINSTAPI_RT_LIB=/home/makuo12/Documents/forte-research/build/dyninstAPI_RT/libdyninstAPI_RT.so
+[123542803487104]dynProcess.C[101]: stdin: 0, stdout: 1, stderr: 2
+[123542803487104]unix.C[362]: Candidate RTLib is /home/makuo12/Documents/forte-research/build/dyninstAPI_RT/libdyninstAPI_RT.so
+[123542803487104]LD_PRELOAD=LD_PRELOAD=/home/makuo12/Documents/forte-research/build/dyninstAPI_RT/libdyninstAPI_RT.so
+Created process 20945
+[123542803487104]dynProcess.C[365]: attempting to bootstrap process 20945
+[123542803487104]Processing initial shared objects
+[123542803487104]----
+[123542803487104]mapped_object.C[151]:  about to parseImage
+[123542803487104]mapped_object.C[153]: name /home/makuo12/Documents/forte-research/untracer/target.elf, codeBase 0x62228b87a000, dataBase 0x62228b87a000
+[123542803487104]image.C[1187]:  about to create image
+[123542803487104]image.C[1422]:  opening file /home/makuo12/Documents/forte-research/untracer/target.elf
+[123542803487104]image.C[1496]:  before findMain
+[123542803487104]image.C[1503]: findMain analysis succeeded.
+[123542803487104]image.C[1557]:  before determineImageType
+[123542803487104]image.C[1189]:  created image
+[123542803487104]image.C[1192]: processing shared object
+[123542803487104]mapped_object.C[166]:  creating mapped object
+[123542803487104][mapped_object.C:105] Creating new mapped_object /home/makuo12/Documents/forte-research/untracer/target.elf/
+[123542803487104][mapped_object.C:107] 	codeBase 0x62228b87a000, codeOffset 0x1000, size 6089
+[123542803487104][mapped_object.C:109] 	dataBase 0x62228b87a000, dataOffset 0x4d08, size 784
+[123542803487104][mapped_object.C:111] 	fileDescriptor: code at 0x62228b87a000, data 0x62228b87a000
+[123542803487104][mapped_object.C:113] 	Code: 0x62228b87b000 to 0x62228b87c7c9
+[123542803487104][mapped_object.C:115] 	Data: 0x62228b87ed08 to 0x62228b87f018
+[123542803487104]mapped_object.C[187]:  leaving createMappedObject(/home/makuo12/Documents/forte-research/untracer/target.elf)
+[123542803487104]dynProcess.C[741]: findSignalhandler(0x55bbd4e371e0)
+[123542803487104]dynProcess.C[747]: findSignalhandler(0x55bbd4e371e0): gettingSymbolInfo
+[123542803487104]dynProcess.C[758]: leaving findSignalhandler(0x55bbd4e371e0)
+[123542803487104]dynProcess.C[684]: adding shared object target.elf, addr range 0x62228b87a000 to 0x62228b87b7c9
+[123542803487104]Begin getDyninstRTLibName
+[123542803487104]unix.C[331]: Candidate RTLib is /home/makuo12/Documents/forte-research/build/dyninstAPI_RT/libdyninstAPI_RT.so
+[123542803487104]dynProcess.C[618]:  leave setAOut/setting main
+Library: /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 / 748815cb1000, <lib>
+[123542803487104]mapped_object.C[151]:  about to parseImage
+[123542803487104]mapped_object.C[153]: name /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2, codeBase 0x748815cb1000, dataBase 0x748815cb1000
+[123542803487104]image.C[1187]:  about to create image
+[123542803487104]image.C[1422]:  opening file /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+[123542803487104]image.C[1496]:  before findMain
+[123542803487104]image.C[1503]: findMain analysis succeeded.
+[123542803487104]image.C[1557]:  before determineImageType
+[123542803487104]image.C[1189]:  created image
+[123542803487104]image.C[1192]: processing shared object
+[123542803487104]mapped_object.C[166]:  creating mapped object
+[123542803487104][mapped_object.C:105] Creating new mapped_object /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2/
+[123542803487104][mapped_object.C:107] 	codeBase 0x748815cb1000, codeOffset 0x1000, size 172437
+[123542803487104][mapped_object.C:109] 	dataBase 0x748815cb1000, dataOffset 0x36360, size 11684
+[123542803487104][mapped_object.C:111] 	fileDescriptor: code at 0x748815cb1000, data 0x748815cb1000
+[123542803487104][mapped_object.C:113] 	Code: 0x748815cb2000 to 0x748815cdc195
+[123542803487104][mapped_object.C:115] 	Data: 0x748815ce7360 to 0x748815cea104
+[123542803487104]mapped_object.C[187]:  leaving createMappedObject(/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2)
+[123542803487104]dynProcess.C[741]: findSignalhandler(0x55bbd5028bf0)
+[123542803487104]dynProcess.C[747]: findSignalhandler(0x55bbd5028bf0): gettingSymbolInfo
+[123542803487104]dynProcess.C[754]: findSignalhandler(0x55bbd5028bf0): addingSignalHandler(0x748815cd7150, 1)
+[123542803487104]dynProcess.C[758]: leaving findSignalhandler(0x55bbd5028bf0)
+[123542803487104]dynProcess.C[684]: adding shared object ld-linux-x86-64.so.2, addr range 0x748815cb1000 to 0x748815cdb195
+[123542803487104]----
+[123542803487104]Stackwalker stepper 0x55bbd4f86370 is a DyninstDynamicStepper
+[123542803487104]Stackwalker stepper 0x55bbd50130c0 is a DebugStepper
+[123542803487104]Stackwalker stepper 0x55bbd4fc9260 is a FrameFuncStepper
+[123542803487104]Stackwalker stepper 0x55bbd4fcc3a0 is an AnalysisStepper
+[123542803487104]Stackwalker stepper 0x55bbd5012330 is a SigHandlerStepper
+[123542803487104]Stackwalker stepper 0x55bbd50732f0 is a BottomOfStackStepper
+[123542803487104]Stackwalker stepper 0x55bbd50d3bc0 is a WandererStepper
+[123542803487104]{unix.C:516] - there is no .opd section. The entry offset is the entry
+[123542803487104][unix.C:525] - hasPassedMain returning 0 (748815cd0540 748815cd0540)
+[123542803487104]dynProcess.C[395]: inserting breakpoint at main
+[123542803487104]dynProcess.C[975]: added trap to entry of main, address 0x62228b87b4d8
+[123542803487104]dynProcess.C[401]: continuing process to breakpoint
+[123542803487104]dynProcess.C[409]: waiting for main() loop
+[123542803487104]dynProcess.C[438]: bootstrap waiting for process to initialize
+[123542803487104]mapped_object.C[151]:  about to parseImage
+[123542803487104]mapped_object.C[153]: name /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2, codeBase 0x748815cb1000, dataBase 0x748815cb1000
+[123542803487104]image.C[1168]: returning pre-parsed image
+[123542803487104]mapped_object.C[166]:  creating mapped object
+[123542803487104][mapped_object.C:105] Creating new mapped_object /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2/
+[123542803487104][mapped_object.C:107] 	codeBase 0x748815cb1000, codeOffset 0x1000, size 172437
+[123542803487104][mapped_object.C:109] 	dataBase 0x748815cb1000, dataOffset 0x36360, size 11684
+[123542803487104][mapped_object.C:111] 	fileDescriptor: code at 0x748815cb1000, data 0x748815cb1000
+[123542803487104][mapped_object.C:113] 	Code: 0x748815cb2000 to 0x748815cdc195
+[123542803487104][mapped_object.C:115] 	Data: 0x748815ce7360 to 0x748815cea104
+[123542803487104]mapped_object.C[187]:  leaving createMappedObject(/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2)
+[123542803487104]dynProcess.C[741]: findSignalhandler(0x705c8024f4c0)
+[123542803487104]dynProcess.C[747]: findSignalhandler(0x705c8024f4c0): gettingSymbolInfo
+[123542803487104]dynProcess.C[754]: findSignalhandler(0x705c8024f4c0): addingSignalHandler(0x748815cd7150, 1)
+[123542803487104]dynProcess.C[758]: leaving findSignalhandler(0x705c8024f4c0)
+[123542803487104]dynProcess.C[684]: adding shared object ld-linux-x86-64.so.2, addr range 0x748815cb1000 to 0x748815cdb195
+[123542803487104]dynProcess.C[409]: waiting for main() loop
+[123542803487104]dynProcess.C[411]: We think the process is stopped, continuing
+[123542803487104]dynProcess.C[438]: bootstrap waiting for process to initialize

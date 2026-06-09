@@ -202,7 +202,7 @@ def setup_oracle_pdftotext(include="-I ./include"):
         f"-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY "
         f"-DCMAKE_CXX_FLAGS=\"-fno-pie -g0\" "
         f"-DCMAKE_C_FLAGS=\"-fno-pie -g0\" "
-        f"-DCMAKE_EXE_LINKER_FLAGS=\"{object_file} -Wl,--wrap=main -L{libs_dir} -Wl,-rpath,{libs_dir} -no-pie -loracle\" "
+        f"-DCMAKE_EXE_LINKER_FLAGS=\"-no-pie \" "
         f"{xpdf_dir}/"
     )
     print(cmake_cmd)
@@ -310,9 +310,9 @@ def main():
     # setup_oracle_pdftotext()
     # setup_tracer_pdftotext()
     # setup_trace_dyninst(headers=headers, filename="./build/pdftotext.trace")
-    # setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
-    setup_untracer()
-    run_untracer()
+    setup_oracle_dyninst(headers=headers, filename="./build/pdftotext.oracle")
+    # setup_untracer()
+    # run_untracer()
     #create_archives(compiler, include, forkserver_name, archive_filename, object_filename) 
     # create_elf(compiler, target_name)
     # result = subprocess.run(["./oracle.elf", input_file])
