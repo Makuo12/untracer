@@ -17,8 +17,6 @@
 # cp ./xpdf/pdttotext /home/makuo12/Documents/forte-research/untracer/pdftotext.trace
 # cd ../..
 # Unset the external one first to confirm it's the in-code setenv doing the work
-unset DYNINSTAPI_RT_LIB
-./build/oracle_dyninst.elf /home/makuo12/Documents/forte-research/untracer/target.elf
 DYNINST_DEBUG_STARTUP=1 \
 DYNINST_DEBUG_BOOTSTRAP=1 \
 DYNINSTAPI_RT_LIB=/home/makuo12/Documents/forte-research/build/dyninstAPI_RT/libdyninstAPI_RT.so \

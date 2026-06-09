@@ -170,10 +170,10 @@ def setup_oracle_dyninst(compiler="g++", include="-I ./include", headers = "", f
     if result.returncode != 0:
         print(f"Compilation failed:\n{result.stderr}")
         exit(1)
-    result = subprocess.run(["./build/oracle_dyninst.elf", filename])
-    if result.returncode != 0:
-        print(f"Compilation failed:\n{result.stderr}")
-        exit(1)
+    # result = subprocess.run(["./build/oracle_dyninst.elf", filename])
+    # if result.returncode != 0:
+    #     print(f"Compilation failed:\n{result.stderr}")
+    #     exit(1)
 
 def setup_oracle_pdftotext(include="-I ./include"):
     xpdf_dir = "/home/makuo12/Documents/forte-research/untracer/xpdf-4.06_2"
