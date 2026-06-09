@@ -61,7 +61,7 @@ void __oracle_fuzz(int argc, char **argv, Entry *entries, int entry_count, const
             __oracle_write_testcase(mem, entry, input_file);
 
             // Execute target main
-            // __real_main(argc, argv);
+            __real_main(argc, argv);
 
             // Re-apply/revert the bit
             __oracle_apply(mem, i);

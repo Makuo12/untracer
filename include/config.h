@@ -18,14 +18,49 @@
 #include <string>
 const std::set<std::string> skipFunctions = {
     // CRT
-    "_start", "__libc_start_main",
-    "_init", "_fini",
-    "__libc_csu_init", "__libc_csu_fini",
-    "register_tm_clones", "deregister_tm_clones",
-    "__do_global_ctors_aux", "__do_global_dtors_aux",
+    "_start",
+    "__libc_start_main",
+    "_init",
+    "_fini",
+    "__libc_csu_init",
+    "__libc_csu_fini",
+    "register_tm_clones",
+    "deregister_tm_clones",
+    "__do_global_ctors_aux",
+    "__do_global_dtors_aux",
     "frame_dummy",
-    "__cxa_atexit", "__cxa_finalize",
-    "malloc", "calloc", "realloc", "free", "FATAL", "SAY", "__wrap_main"
+    "__cxa_atexit",
+    "__cxa_finalize",
+    "malloc",
+    "calloc",
+    "realloc",
+    "free",
+    "FATAL",
+    "SAY",
+    "__wrap_main",
+
+    // Oracle functions
+    "__oracle_init",
+    "__oracle_init_shm",
+    "__oracle_init@plt",
+    "__oracle_trap_hit",
+    "__oracle_trap_hit@plt",
+    "__oracle_save_rdi",
+    "__oracle_save_rdi@plt",
+    "__oracle_restore_rdi",
+    "__oracle_fuzz",
+    "__oracle_apply",
+    "__oracle_write_testcase",
+    "__oracle_restore_rdi@plt",
+
+    // Oracle tracer internals
+    "__tracer_init_virgin_bits",
+    "__tracer_cleanup_trace_bits",
+    "__tracer_init_trace_bits",
+    "__tracer_init_count_class16",
+    "__tracer_init_class_lookup16",
+    "__tracer_classify_counts",
+    "__tracer_has_bit",
 };
 #endif
 #endif

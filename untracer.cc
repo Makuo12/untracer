@@ -16,6 +16,7 @@
 #include <random>
 #include <sstream>
 #include <iomanip>
+#include <unordered_set>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/shm.h>
@@ -37,6 +38,7 @@ using std::ofstream;
 using std::map;
 using std::cout;
 using std::cerr;
+using std::unordered_set;
 using std::endl;
 
 int total_paths_found = 0;
@@ -226,14 +228,13 @@ void remodify_oracle(string &path_to_oracle, map<u64, u8> &breakpoint)
     }
     oracle_file.close();
 }
-
 void modify_oracle(string &path_to_oracle, vector<u64> &list, map<u64, u8> &breakpoint)
 {
     u64 addr;
     char flag[1] = {(char)0xCC};
     int offset = 0;
     fstream oracle_file(path_to_oracle, std::ios::in | std::ios::out | std::ios::binary); // add binary mode
-    for (int i = 0; i < MAP_SIZE && i < (int)list.size(); i++)
+    for (decltype(list.size()) i = 0; i < list.size(); i++)
     {
         addr = list[i] + offset;
         if (addr != 0)
@@ -321,6 +322,7 @@ std::string generateRandomFilename(const std::string& extension = ".txt") {
 
 void trace(const string &path_to_oracle, const string &path_to_trace, const string &path_to_input, string &in_dir, string &out_dir)
 {
+    cout << "on trace" << endl;
     memset(trace_bits, 0, MAP_SIZE);
     pid_t pid = fork();
     if (pid == 0)
@@ -366,6 +368,7 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
             {
                 saveInputFile();
             }
+            waitpid(pid, NULL, 0); // reap the child fully
         }
         else if (WIFSIGNALED(status))
         {
@@ -375,6 +378,7 @@ void trace(const string &path_to_oracle, const string &path_to_trace, const stri
             {
                 saveInputFile();
             }
+            waitpid(pid, NULL, 0); // reap the child fully
         }
     }
     else

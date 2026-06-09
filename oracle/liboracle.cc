@@ -12,6 +12,11 @@ u64 *trap_block_ids;
 static long savedDi;
 register long rdi asm("di"); // the warning is fine - we need the warning because of a bug in dyninst
 
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 void __oracle_init(Entry **entries, int *entry_count, const char *input_file)
 {
     // 1. Handle environment variables and default fallback strings
@@ -95,12 +100,6 @@ void __oracle_init(Entry **entries, int *entry_count, const char *input_file)
     }
 }
 
-
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 void __oracle_write_testcase(u8 * mem, Entry * entry, const char *input_file) {
     ofstream file(input_file, std::ios::binary);
     if (!file.is_open()) {
@@ -124,12 +123,6 @@ void __oracle_init_shm(void) {
         FATAL({"Failed to link trap_block_ids to memory"});
     }
 }
-
-#ifdef __cplusplus
-}
-#endif
-
-
 void __oracle_save_rdi()
 {
     savedDi = rdi;
@@ -155,4 +148,9 @@ void __oracle_trap_hit(int blkId) {
     MEM_BARRIER();
     __asm__ volatile("int3");
 }
+#ifdef __cplusplus
+}
+#endif
+
+
 
