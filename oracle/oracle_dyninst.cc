@@ -1,13 +1,3 @@
-#include <iostream>
-#include <vector>
-#include <string>
-#include <set>
-
-#include <cstring>
-#include <fstream>
-
-#include "dyninst_handle.h"
-
 using std::cerr;
 using std::cout;
 using std::endl;
@@ -18,26 +8,41 @@ using std::set;
 using std::ifstream;
 using std::ofstream;
 
-set<string> skipLibraries;
+#include <iostream>
+#include <vector>
+#include <set>
+#include <string>
+#include "BPatch.h"
+#include "BPatch_process.h"
+#include "BPatch_image.h"
+#include "BPatch_module.h"
+#include "BPatch_function.h"
+#include "BPatch_point.h"
+#include "BPatch_snippet.h"
 
-BPatch_function * oracle_block_hit;
-BPatch_function * restore_rdi;
-BPatch_function * save_rdi;
+// Global blocklists
+std::set<std::string> skipLibraries;
 
-bool dynfix = true;
-
-using namespace Dyninst;
-BPatch bpatch;
-
-bool verbose = true;
-
-const char * oracle_library = "./libs/liboracle.so";
-
+const std::set<std::string> skipFunctions = {
+    // CRT
+    "_start", "__libc_start_main", "_init", "_fini",
+    "__libc_csu_init", "__libc_csu_fini", "register_tm_clones",
+    "deregister_tm_clones", "__do_global_ctors_aux", "__do_global_dtors_aux",
+    "frame_dummy", "__cxa_atexit", "__cxa_finalize",
+    "malloc", "calloc", "realloc", "free", "FATAL", "SAY", "__wrap_main",
+    // Oracle functions
+    "__oracle_init", "__oracle_init_shm", "__oracle_init@plt",
+    "__oracle_trap_hit", "__oracle_trap_hit@plt", "__oracle_save_rdi",
+    "__oracle_save_rdi@plt", "__oracle_restore_rdi", "__oracle_fuzz",
+    "__oracle_apply", "__oracle_write_testcase", "__oracle_restore_rdi@plt",
+    // Oracle tracer internals
+    "__tracer_init_virgin_bits", "__tracer_cleanup_trace_bits",
+    "__tracer_init_trace_bits", "__tracer_init_count_class16",
+    "__tracer_init_class_lookup16", "__tracer_classify_counts", "__tracer_has_bit"};
 
 void initSkipLibraries()
 {
-    /* List of shared libraries to skip instrumenting. */
-    skipLibraries.insert("./libs/liboracle.so");
+    skipLibraries.insert("liboracle.so"); // Stripped path for easier matching
     skipLibraries.insert("libc.so.6");
     skipLibraries.insert("libc.so.7");
     skipLibraries.insert("ld-2.5.so");
@@ -48,261 +53,99 @@ void initSkipLibraries()
     skipLibraries.insert("ld-elf.so.1");
     skipLibraries.insert("ld-elf32.so.1");
     skipLibraries.insert("libstdc++.so.6");
-    return;
 }
 
-
-BPatch_function *findFuncByName(BPatch_image *appImage, char *curFuncName)
+// Helper to check if a module path contains any blacklisted library names
+bool shouldSkipModule(const std::string &modName)
 {
-    BPatch_Vector<BPatch_function *> funcs;
-    if (NULL == appImage->findFunction(curFuncName, funcs) || !funcs.size() || NULL == funcs[0])
+    for (const auto &lib : skipLibraries)
     {
-        cerr << "Failed to find " << curFuncName << " function." << endl;
-        return NULL;
+        if (modName.find(lib) != std::string::npos)
+        {
+            return true;
+        }
     }
-
-    return funcs[0];
+    return false;
 }
 
-int insert_oracle(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *curBlk, unsigned long curBlkAddr, unsigned int curBlkSize, unsigned int curBlkID)
+BPatch bpatch;
+
+int main(int argc, char **argv)
 {
-
-    /* Verify curBlk is instrumentable. */
-    if (curBlk == NULL)
+    if (argc < 2)
     {
-        cerr << "Failed to find entry at 0x" << std::hex << curBlkAddr << std::endl;
-        return EXIT_FAILURE;
-    }
-    BPatch_Vector<BPatch_snippet *> instArgsDynfix;
-    BPatch_Vector<BPatch_snippet *> instArgs;
-
-    BPatch_constExpr argCurBlkID(curBlkID);
-    instArgs.push_back(&argCurBlkID);
-
-    BPatch_funcCallExpr instExprSaveRdi(*save_rdi, instArgsDynfix);
-    BPatch_funcCallExpr instExprRestRdi(*restore_rdi, instArgsDynfix);
-    BPatch_funcCallExpr instExproracle(*oracle_block_hit, instArgs);
-    BPatchSnippetHandle *handle;
-    bool failed = false;
-    /* RDI fix handling. */
-    if (dynfix)
-        handle = appBin->insertSnippet(instExprSaveRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-    /* Instruments the basic block. */
-    handle = appBin->insertSnippet(instExproracle, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-    if (!handle) {
-        failed = true;
-    }
-    /* Wrap up RDI fix handling. */
-    if (dynfix)
-        handle = appBin->insertSnippet(instExprRestRdi, *curBlk, BPatch_callBefore, BPatch_lastSnippet);
-    /* Verify instrumenting worked. If all good, advance blkIndex and return. */
-    if (!handle)
-    {
-        cerr << "Failed to insert oracle callback at 0x" << std::hex << curBlkAddr << std::endl;
-    }
-    if (handle && !failed)
-    {
-        FILE *blksListFile = fopen("./output/.bblist", "a");
-        fprintf(blksListFile, "%lu\n", curBlkAddr);
-        fclose(blksListFile);
-    }
-    /* Print some useful info, if requested. */
-    if (verbose)
-        cout << "Inserted oracle callback at 0x" << std::hex << curBlkAddr << " of " << curFuncName << " of size " << std::dec << curBlkSize << std::endl;
-
-    return 0;
-}
-
-void iterateBlocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex)
-{
-
-    /* Extract the function's name, and its pointer from the parent function vector. */
-    BPatch_function *curFunc = *funcIter;
-    char curFuncName[1024];
-    curFunc->getName(curFuncName, 1024);
-
-    /* Extract the function's CFG. */
-    BPatch_flowGraph *curFuncCFG = curFunc->getCFG();
-    if (!curFuncCFG)
-    {
-        cerr << "Failed to find CFG for function " << curFuncName << endl;
-        return;
-    }
-    /* Extract the CFG's basic blocks and verify the number of blocks isn't 0. */
-    BPatch_Set<BPatch_basicBlock *> curFuncBlks;
-    if (!curFuncCFG->getAllBasicBlocks(curFuncBlks))
-    {
-        cerr << "Failed to find basic blocks for function " << curFuncName << endl;
-        return;
-    }
-    if (curFuncBlks.size() == 0)
-    {
-        cerr << "No basic blocks for function " << curFuncName << endl;
-        return;
+        std::cerr << "Usage: " << argv[0] << " <target_executable>\n";
+        return -1;
     }
 
-    /* Set up this function's basic block iterator and start iterating. */
-    BPatch_Set<BPatch_basicBlock *>::iterator blksIter;
-
-    for (blksIter = curFuncBlks.begin(); blksIter != curFuncBlks.end(); blksIter++)
-    {
-
-        /* Get the current basic block, and its size and address. */
-        BPatch_point *curBlk = (*blksIter)->findEntryPoint();
-        unsigned int curBlkSize = (*blksIter)->size();
-        /* Compute the basic block's adjusted address.	*/
-        unsigned long curBlkAddr = (*blksIter)->getStartAddress();
-        /* Non-PIE binary address correction. */
-        curBlkAddr = curBlkAddr - (long)0x400000;
-
-        unsigned int curBlkID = *blkIndex;
-
-        /* If using forkserver, instrument the first block in function <main> with the forkserver callback.
-         * Use the correct forkserver based on the existence of tracePath. */
-
-
-        /* We skip <main> if instrumenting forkserver. */
-        if (string(curFuncName) == string("main"))
-            continue;
-
-        /* Other basic blocks to ignore. */
-        if (string(curFuncName) == string("init") ||
-            string(curFuncName) == string("_init") ||
-            string(curFuncName) == string("fini") ||
-            string(curFuncName) == string("_fini") ||
-            string(curFuncName) == string("register_tm_clones") ||
-            string(curFuncName) == string("deregister_tm_clones") ||
-            string(curFuncName) == string("frame_dummy") ||
-            string(curFuncName) == string("__do_global_ctors_aux") ||
-            string(curFuncName) == string("__do_global_dtors_aux") ||
-            string(curFuncName) == string("__libc_csu_init") ||
-            string(curFuncName) == string("__libc_csu_fini") ||
-            string(curFuncName) == string("start") ||
-            string(curFuncName) == string("_start") ||
-            string(curFuncName) == string("__libc_start_main") ||
-            string(curFuncName) == string("__gmon_start__") ||
-            string(curFuncName) == string("__cxa_atexit") ||
-            string(curFuncName) == string("__cxa_finalize") ||
-            string(curFuncName) == string("__assert_fail") ||
-            string(curFuncName) == string("free") ||
-            string(curFuncName) == string("fnmatch") ||
-            string(curFuncName) == string("readlinkat") ||
-            string(curFuncName) == string("malloc") ||
-            string(curFuncName) == string("calloc") ||
-            string(curFuncName) == string("realloc") ||
-            string(curFuncName) == string("argp_failure") ||
-            string(curFuncName) == string("argp_help") ||
-            string(curFuncName) == string("argp_state_help") ||
-            string(curFuncName) == string("argp_error") ||
-            string(curFuncName) == string("argp_parse") ||
-            (string(curFuncName).substr(0, 4) == string("targ") && isdigit(string(curFuncName)[5])))
-        {
-            continue;
-        }
-        string functionName(curFuncName);
-        if (skipFunctions.count(functionName))
-            continue;
-        if ((strstr(functionName.data(), "__oracle")) != NULL)
-            continue;
-
-        /* If the address is in the list of addresses to skip, skip it. */
-        if (skipAddresses.find(curBlkAddr) != skipAddresses.end())
-        {
-            (*blkIndex)++;
-            continue;
-        }
-
-        /* If we're not in forkserver-only mode, check the block's indx/size and skip if necessary. */
-        if (*blkIndex < numBlksToSkip || curBlkSize < minBlkSize)
-        {
-            (*blkIndex)++;
-            continue;
-        }
-
-        /* If path to output analyzed bb addrs list set, save the addresses of each basic block visited. */
-        if (analyzedBBListPath)
-        {
-            FILE *blksListFile = fopen(analyzedBBListPath, "a");
-            fprintf(blksListFile, "%lu\n", curBlkAddr);
-            fclose(blksListFile);
-        }
-        insert_oracle(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, *blkIndex);
-
-        (*blkIndex)++;
-        continue;
-    }
-
-    return;
-}
-
-
-int main(int argc, char **argv) {
     initSkipLibraries();
-    bpatch.setDelayedParsing(true);
-    bpatch.setLivenessAnalysis(false);
-    bpatch.setMergeTramp(false);
-    string outputBinary("./build/oracle_instrumented.elf");
-    int blkIndex = 0;
-    BPatch_binaryEdit *app = bpatch.openBinary(argv[1]);
-    if (app == NULL)
+    BPatch_process *appProcess = bpatch.processCreate(argv[1], nullptr);
+    if (!appProcess)
+        return -1;
+
+    BPatch_image *appImage = appProcess->getImage();
+
+    // 1. Get all modules (executable and loaded shared libraries)
+    std::vector<BPatch_module *> *modules = appImage->getModules();
+    BPatch_breakPointExpr breakPointSnippet;
+    size_t breakpointCount = 0;
+
+    for (BPatch_module *mod : *modules)
     {
-        cerr << "Failed to open binary" << endl;
-        return EXIT_FAILURE;
-    }
-    BPatch_image *appImage = app->getImage();
-    if (!app->loadLibrary(oracle_library)) {
-        cerr << "Failed to load binary" << endl;
-        return EXIT_FAILURE;
-    }
-    save_rdi = findFuncByName(appImage, (char *)"__oracle_save_rdi");
-    restore_rdi = findFuncByName(appImage, (char *)"__oracle_restore_rdi");
-    oracle_block_hit = findFuncByName(appImage, (char *)"__oracle_trap_hit");
-    if (save_rdi == NULL || restore_rdi == NULL || oracle_block_hit == NULL) {
-        cerr << "Failed to find important functions" << endl;
-        return EXIT_FAILURE;
-    }
-    vector<BPatch_module *> *modules = appImage->getModules();
-    vector<BPatch_module *>::iterator moduleIter;
-    for (moduleIter = modules->begin(); moduleIter != modules->end(); ++moduleIter)
-    {
-        /* Extract module name and verify whether it should be skipped based. */
-        char curModuleName[1024];
-        (*moduleIter)->getName(curModuleName, 1024);
-        if ((*moduleIter)->isSharedLib())
+        char modBuffer[512];
+        mod->getName(modBuffer, sizeof(modBuffer));
+        std::string modName(modBuffer);
+
+        // 2. Filter out skipped libraries
+        if (shouldSkipModule(modName))
         {
-            if (skipLibraries.find(curModuleName) != skipLibraries.end())
+            std::cout << "[Skip Library] " << modName << "\n";
+            continue;
+        }
+
+        // 3. Get all functions within the allowed module
+        std::vector<BPatch_function *> *functions = mod->getProcedures();
+        for (BPatch_function *func : *functions)
+        {
+            char funcBuffer[512];
+            func->getName(funcBuffer, sizeof(funcBuffer));
+            std::string funcName(funcBuffer);
+
+            // 4. Filter out skipped functions
+            if (skipFunctions.find(funcName) != skipFunctions.end())
             {
-                if (verbose)
-                {
-                    cout << "Skipping library: " << curModuleName << endl;
-                }
+                std::cout << "[Skip Function] " << funcName << " in " << modName << "\n";
                 continue;
             }
-        }
 
-        unsigned long long moduleBase = (unsigned long long)(*moduleIter)->getBaseAddr();
-        std::cout << "Module: " << curModuleName << " Base: 0x" << std::hex << moduleBase << std::dec << std::endl;
-        /* Extract the module's functions and iterate through its basic blocks. */
-        vector<BPatch_function *> *funcsInModule = (*moduleIter)->getProcedures();
-        vector<BPatch_function *>::iterator funcIter;
-
-        for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
-        {
-            /* Go through each function's basic blocks and insert callbacks accordingly. */
-            iterateBlocks(app, funcIter, &blkIndex, moduleBase);
+            // 5. Safely insert breakpoint snippet at function entry
+            std::vector<BPatch_point *> *entries = func->findPoint(BPatch_entry);
+            if (entries && !entries->empty())
+            {
+                appProcess->insertSnippet(breakPointSnippet, *entries);
+                breakpointCount++;
+            }
         }
     }
-    /* If specified, save the instrumented binary and verify success. */
-    // if (outputBinary.size() > 0)
-    // {
-    //     if (verbose)
-    //         cout << "Saving the instrumented binary to " << outputBinary << " ..." << endl;
-    //     if (!app->writeFile(outputBinary.data()))
-    //     {
-    //         cerr << "Failed to write output file: " << outputBinary << endl;
-    //         return EXIT_FAILURE;
-    //     }
-    // }
-    if (verbose)
-        cout << "All done!" << endl;
+
+    std::cout << "\nSuccessfully inserted " << breakpointCount << " breakpoints.\n";
+
+    // 6. Run the target process loop
+    appProcess->continueExecution();
+    while (!appProcess->isTerminated())
+    {
+        bpatch.waitForStatusChange();
+
+        if (appProcess->isStopped())
+        {
+            // A safe function hit a breakpoint!
+            std::cout << "[!] Breakpoint hit inside allowed code base." << std::endl;
+
+            // Handle your tracking/fuzzing state here...
+
+            appProcess->continueExecution();
+        }
+    }
+
+    return 0;
 }
