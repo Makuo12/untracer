@@ -126,13 +126,11 @@ int insert_trace(BPatch_binaryEdit *appBin, char *curFuncName, BPatch_point *cur
     return 0;
 }
 
-void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, int *blkIndex, unsigned long long moduleBase)
+void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterator funcIter, u64 *blkIndex, unsigned long long moduleBase)
 {
 
     /* Extract the function's name, and its pointer from the parent function vector. */
     BPatch_function *curFunc = *funcIter;
-    char curFuncName[1024];
-    curFunc->getName(curFuncName, 1024);
     /* Extract the function's CFG. */
     BPatch_flowGraph *curFuncCFG = curFunc->getCFG();
     if (!curFuncCFG)
@@ -152,38 +150,18 @@ void iterate_blocks(BPatch_binaryEdit *appBin, vector<BPatch_function *>::iterat
         cerr << "No basic blocks for function " << curFuncName << endl;
         return;
     }
-    /* Set up this function's basic block iterator and start iterating. */
     BPatch_Set<BPatch_basicBlock *>::iterator blksIter;
-    for (blksIter = curFuncBlks.begin(); blksIter != curFuncBlks.end(); blksIter++)
+    for (blksIter = curFuncBlks.begin(); blksIter != curFuncBlks.end(); ++blksIter)
     {
         /* Get the current basic block, and its size and address. */
         BPatch_point *curBlk = (*blksIter)->findEntryPoint();
-        unsigned int curBlkSize = (*blksIter)->size();
+        u32 curBlkSize = (*blksIter)->size();
         /* Compute the basic block's adjusted address.	*/
-        unsigned long curBlkAddr = (*blksIter)->getStartAddress();
+        u64 curBlkAddr = (*blksIter)->getStartAddress();
         /* Non-PIE binary address correction. */
-        // curBlkAddr = curBlkAddr - moduleBase;
         curBlkAddr = curBlkAddr - (long)0x400000;
-        unsigned int curBlkID = *blkIndex;
+        u32 curBlkID = *blkIndex;
         /* Other basic blocks to ignore. */
-        string functionName(curFuncName);
-        if (skipFunctions.count(functionName))
-            continue;
-        // Catches __tracer_* variants not explicitly listed
-        if (strstr(functionName.data(), "__tracer") != NULL)
-            continue;
-        if (strstr(functionName.data(), "__oracle") != NULL)
-            continue;
-        if (strstr(functionName.data(), "__fsrvonly") != NULL)
-            continue;
-        // Catches targ[digit] synthetic Dyninst functions
-        if (functionName.substr(0, 4) == "targ" && isdigit(functionName[4]))
-            continue;
-        if (curBlkSize < 2)
-        {
-            (*blkIndex)++;
-            continue;
-        }
         insert_trace(appBin, curFuncName, curBlk, curBlkAddr, curBlkSize, curBlkID);
         (*blkIndex)++;
         continue;
@@ -197,7 +175,7 @@ int main(int argc, char **argv) {
     bpatch.setLivenessAnalysis(false);
     bpatch.setMergeTramp(false);
     string outputBinary("./build/tracer_instrumented.elf");
-    int blkIndex = 0;
+    u64 blkIndex = 0;
     BPatch_binaryEdit *app = bpatch.openBinary(argv[1]);
     if (app == NULL)
     {
@@ -239,10 +217,29 @@ int main(int argc, char **argv) {
         /* Extract the module's functions and iterate through its basic blocks. */
         vector<BPatch_function *> *funcsInModule = (*moduleIter)->getProcedures();
         vector<BPatch_function *>::iterator funcIter;
-
         for (funcIter = funcsInModule->begin(); funcIter != funcsInModule->end(); ++funcIter)
         {
             /* Go through each function's basic blocks and insert callbacks accordingly. */
+            char curFuncName[1024];
+            curFunc->getName(curFuncName, 1024);
+            string functionName(curFuncName);
+            if (skipFunctions.count(functionName))
+                continue;
+            // Catches __tracer_* variants not explicitly listed
+            if (strstr(functionName.data(), "__tracer") != NULL)
+                continue;
+            if (strstr(functionName.data(), "__oracle") != NULL)
+                continue;
+            if (strstr(functionName.data(), "__fsrvonly") != NULL)
+                continue;
+            // Catches targ[digit] synthetic Dyninst functions
+            if (functionName.substr(0, 4) == "targ" && isdigit(functionName[4]))
+                continue;
+            if (curBlkSize < 2)
+            {
+                (*blkIndex)++;
+                continue;
+            }
             iterate_blocks(app, funcIter, &blkIndex, moduleBase);
         }
     }

@@ -1,6 +1,6 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
-#define MAP_SIZE (1 << 16)
+// #define MAP_SIZE (1 << 16)
 #define BLOCK_SIZE 300000
 #define CAN_TRACE_PIPE "can_trace_pipe"
 #define DONE_TRACE_PIPE "done_trace_pipe"

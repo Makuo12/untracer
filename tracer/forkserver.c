@@ -6,7 +6,6 @@
 #include "config.h"
 #include "libtracer.h"
 
-
 int __wrap_main(int argc, char **argv)
 {
     __tracer_init_trace_bits();
